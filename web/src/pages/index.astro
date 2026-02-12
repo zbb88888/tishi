@@ -1,0 +1,108 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import { getRankings, type Project } from '../lib/api';
+
+let projects: Project[] = [];
+let error: string | null = null;
+
+try {
+  const res = await getRankings(1, 100);
+  projects = res.data;
+} catch (e) {
+  error = '暂时无法加载排行榜数据，请确认后端服务已启动。';
+}
+
+function languageColor(lang: string | null): string {
+  const colors: Record<string, string> = {
+    Python: 'bg-blue-500',
+    TypeScript: 'bg-blue-600',
+    JavaScript: 'bg-yellow-400',
+    Go: 'bg-cyan-500',
+    Rust: 'bg-orange-600',
+    'C++': 'bg-pink-600',
+    Java: 'bg-red-500',
+    Jupyter: 'bg-orange-400',
+  };
+  return colors[lang || ''] || 'bg-gray-400';
+}
+
+function formatNumber(n: number): string {
+  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
+  return String(n);
+}
+---
+
+<BaseLayout title="AI 开源排行榜">
+  <div class="mb-8">
+    <h1 class="text-3xl font-bold text-gray-900">🔥 AI 开源项目排行榜</h1>
+    <p class="mt-2 text-gray-600">GitHub AI 相关 Top 100 热门项目，数据每日自动更新</p>
+  </div>
+
+  {error ? (
+    <div class="card text-center text-gray-500 py-12">
+      <p class="text-lg">{error}</p>
+      <p class="mt-2 text-sm">运行 <code class="bg-gray-100 px-2 py-1 rounded">make run</code> 启动后端服务</p>
+    </div>
+  ) : projects.length === 0 ? (
+    <div class="card text-center text-gray-500 py-12">
+      <p class="text-lg">暂无数据</p>
+      <p class="mt-2 text-sm">运行 <code class="bg-gray-100 px-2 py-1 rounded">tishi collect</code> 开始首次数据采集</p>
+    </div>
+  ) : (
+    <div class="overflow-x-auto">
+      <table class="w-full text-left text-sm">
+        <thead class="bg-gray-100 text-xs uppercase text-gray-600">
+          <tr>
+            <th class="px-4 py-3 w-16">排名</th>
+            <th class="px-4 py-3">项目</th>
+            <th class="px-4 py-3 w-24">语言</th>
+            <th class="px-4 py-3 w-24 text-right">⭐ Star</th>
+            <th class="px-4 py-3 w-24 text-right">🍴 Fork</th>
+            <th class="px-4 py-3 w-20 text-right">评分</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-200">
+          {projects.map((p) => (
+            <tr class="hover:bg-gray-50 transition-colors">
+              <td class="px-4 py-3 font-bold text-gray-400">
+                {p.rank != null ? (
+                  <span class={p.rank <= 3 ? 'text-primary-600 text-lg' : ''}>
+                    #{p.rank}
+                  </span>
+                ) : '-'}
+              </td>
+              <td class="px-4 py-3">
+                <div>
+                  <a href={`/projects/${p.id}`}
+                     class="font-medium text-gray-900 hover:text-primary-600 transition-colors">
+                    {p.full_name}
+                  </a>
+                  {p.description && (
+                    <p class="mt-0.5 text-xs text-gray-500 line-clamp-1">{p.description}</p>
+                  )}
+                </div>
+              </td>
+              <td class="px-4 py-3">
+                {p.language && (
+                  <span class="inline-flex items-center gap-1.5 text-xs">
+                    <span class={`h-2.5 w-2.5 rounded-full ${languageColor(p.language)}`}></span>
+                    {p.language}
+                  </span>
+                )}
+              </td>
+              <td class="px-4 py-3 text-right font-mono text-xs">
+                {formatNumber(p.stars)}
+              </td>
+              <td class="px-4 py-3 text-right font-mono text-xs text-gray-500">
+                {formatNumber(p.forks)}
+              </td>
+              <td class="px-4 py-3 text-right">
+                <span class="badge-blue">{p.score.toFixed(1)}</span>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )}
+</BaseLayout>

@@ -1,0 +1,172 @@
+---
+/**
+ * TrendChart — 使用 Chart.js 渲染项目 Star/Fork/Score 趋势图
+ * 以 client:only 方式嵌入，通过 <canvas> + inline <script> 实现
+ */
+interface Props {
+  projectId: number;
+  projectName: string;
+}
+
+const { projectId, projectName } = Astro.props;
+---
+
+<div class="trend-chart-container" data-project-id={projectId}>
+  <div class="flex items-center justify-between mb-4">
+    <h2 class="text-lg font-semibold text-gray-900">📈 趋势图 — {projectName}</h2>
+    <div class="flex gap-2">
+      <button data-days="7" class="trend-btn text-xs px-3 py-1 rounded-full border border-gray-300 text-gray-600 hover:bg-gray-100 transition-colors">7 天</button>
+      <button data-days="30" class="trend-btn text-xs px-3 py-1 rounded-full bg-primary-600 text-white">30 天</button>
+      <button data-days="90" class="trend-btn text-xs px-3 py-1 rounded-full border border-gray-300 text-gray-600 hover:bg-gray-100 transition-colors">90 天</button>
+    </div>
+  </div>
+
+  <div class="grid gap-4 md:grid-cols-2">
+    <div class="bg-gray-50 rounded-lg p-4">
+      <canvas id={`stars-chart-${projectId}`} height="200"></canvas>
+    </div>
+    <div class="bg-gray-50 rounded-lg p-4">
+      <canvas id={`forks-chart-${projectId}`} height="200"></canvas>
+    </div>
+  </div>
+
+  <div class="mt-3 text-center text-xs text-gray-400" id={`chart-status-${projectId}`}>
+    正在加载趋势数据…
+  </div>
+</div>
+
+<script define:vars={{ projectId }}>
+  // Chart.js is loaded via CDN below; this inline script runs after DOM ready
+  async function initTrendChart(pid, days = 30) {
+    const container = document.querySelector(`.trend-chart-container[data-project-id="${pid}"]`);
+    const statusEl = document.getElementById(`chart-status-${pid}`);
+    if (!container || !statusEl) return;
+
+    statusEl.textContent = '正在加载趋势数据…';
+
+    try {
+      const apiBase = '';
+      const res = await fetch(`${apiBase}/api/v1/projects/${pid}/trends?days=${days}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const json = await res.json();
+      const points = json.data || [];
+
+      if (points.length === 0) {
+        statusEl.textContent = '暂无趋势数据，请先运行 tishi collect 并等待数据积累';
+        return;
+      }
+
+      const labels = points.map(p => {
+        const d = new Date(p.date);
+        return `${d.getMonth() + 1}/${d.getDate()}`;
+      });
+      const starsData = points.map(p => p.stars);
+      const forksData = points.map(p => p.forks);
+
+      // Destroy previous charts if they exist
+      const starsCanvas = document.getElementById(`stars-chart-${pid}`);
+      const forksCanvas = document.getElementById(`forks-chart-${pid}`);
+
+      if (starsCanvas._chart) starsCanvas._chart.destroy();
+      if (forksCanvas._chart) forksCanvas._chart.destroy();
+
+      const Chart = window.Chart;
+      if (!Chart) {
+        statusEl.textContent = 'Chart.js 未加载';
+        return;
+      }
+
+      const commonOpts = {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { intersect: false, mode: 'index' },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            backgroundColor: 'rgba(0,0,0,0.8)',
+            titleFont: { size: 12 },
+            bodyFont: { size: 11 },
+          },
+        },
+        scales: {
+          x: {
+            grid: { display: false },
+            ticks: { font: { size: 10 }, maxTicksLimit: 10 },
+          },
+          y: {
+            grid: { color: 'rgba(0,0,0,0.04)' },
+            ticks: { font: { size: 10 } },
+          },
+        },
+      };
+
+      starsCanvas._chart = new Chart(starsCanvas, {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [{
+            label: '⭐ Stars',
+            data: starsData,
+            borderColor: '#eab308',
+            backgroundColor: 'rgba(234,179,8,0.1)',
+            fill: true,
+            tension: 0.3,
+            pointRadius: points.length > 30 ? 0 : 3,
+          }],
+        },
+        options: { ...commonOpts, plugins: { ...commonOpts.plugins, title: { display: true, text: 'Stars', font: { size: 13 } } } },
+      });
+
+      forksCanvas._chart = new Chart(forksCanvas, {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [{
+            label: '🍴 Forks',
+            data: forksData,
+            borderColor: '#6b7280',
+            backgroundColor: 'rgba(107,114,128,0.1)',
+            fill: true,
+            tension: 0.3,
+            pointRadius: points.length > 30 ? 0 : 3,
+          }],
+        },
+        options: { ...commonOpts, plugins: { ...commonOpts.plugins, title: { display: true, text: 'Forks', font: { size: 13 } } } },
+      });
+
+      statusEl.textContent = `最近 ${days} 天数据 · 共 ${points.length} 个数据点`;
+    } catch (err) {
+      statusEl.textContent = '加载失败：' + err.message;
+    }
+  }
+
+  // Button click handlers
+  document.querySelectorAll(`.trend-chart-container[data-project-id="${projectId}"] .trend-btn`).forEach(btn => {
+    btn.addEventListener('click', () => {
+      // Reset button styles
+      document.querySelectorAll(`.trend-chart-container[data-project-id="${projectId}"] .trend-btn`).forEach(b => {
+        b.className = 'trend-btn text-xs px-3 py-1 rounded-full border border-gray-300 text-gray-600 hover:bg-gray-100 transition-colors';
+      });
+      btn.className = 'trend-btn text-xs px-3 py-1 rounded-full bg-primary-600 text-white';
+      initTrendChart(projectId, Number(btn.dataset.days));
+    });
+  });
+
+  // Load Chart.js from CDN if not already loaded, then init
+  function boot() {
+    if (window.Chart) {
+      initTrendChart(projectId, 30);
+    } else {
+      const s = document.createElement('script');
+      s.src = 'https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js';
+      s.onload = () => initTrendChart(projectId, 30);
+      document.head.appendChild(s);
+    }
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', boot);
+  } else {
+    boot();
+  }
+</script>

@@ -1,0 +1,35 @@
+# Binaries
+bin/
+*.exe
+
+# Go
+coverage.out
+*.test
+vendor/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Env
+.env
+.env.local
+
+# Docker
+docker-compose.override.yml
+
+# Logs
+*.log
+
+# Build cache
+tmp/
+
+# sqlc generated (optional — track or not)
+# internal/db/dbgen/
+
+# Air live reload
+tmp/

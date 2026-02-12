@@ -1,0 +1,68 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import { getPosts, type BlogPost } from '../../lib/api';
+
+let posts: BlogPost[] = [];
+let error: string | null = null;
+
+try {
+  const res = await getPosts(1, 20);
+  posts = res.data;
+} catch (e) {
+  error = '暂时无法加载博客文章';
+}
+
+function formatDate(dateStr: string | null): string {
+  if (!dateStr) return '';
+  return new Date(dateStr).toLocaleDateString('zh-CN', {
+    year: 'numeric', month: 'long', day: 'numeric',
+  });
+}
+
+function typeLabel(type: string): string {
+  const labels: Record<string, string> = {
+    weekly: '📊 周报',
+    monthly: '📈 月报',
+  };
+  return labels[type] || type;
+}
+---
+
+<BaseLayout title="博客">
+  <div class="mb-8">
+    <h1 class="text-3xl font-bold text-gray-900">📝 博客</h1>
+    <p class="mt-2 text-gray-600">AI 开源趋势周报、月报与深度分析</p>
+  </div>
+
+  {error ? (
+    <div class="card text-center text-gray-500 py-12">
+      <p>{error}</p>
+    </div>
+  ) : posts.length === 0 ? (
+    <div class="card text-center text-gray-500 py-12">
+      <p>暂无文章</p>
+      <p class="mt-2 text-sm">运行 <code class="bg-gray-100 px-2 py-1 rounded">tishi generate weekly</code> 生成首篇周报</p>
+    </div>
+  ) : (
+    <div class="space-y-4">
+      {posts.map((post) => (
+        <a href={`/blog/${post.slug}`} class="card block group">
+          <div class="flex items-start justify-between">
+            <div>
+              <span class="text-xs text-gray-400">{typeLabel(post.type)}</span>
+              <h2 class="mt-1 text-lg font-semibold text-gray-900 group-hover:text-primary-600 transition-colors">
+                {post.title}
+              </h2>
+              {post.excerpt && (
+                <p class="mt-2 text-sm text-gray-500 line-clamp-2">{post.excerpt}</p>
+              )}
+            </div>
+            <time class="shrink-0 text-xs text-gray-400">
+              {formatDate(post.published_at)}
+            </time>
+          </div>
+        </a>
+      ))}
+    </div>
+  )}
+</BaseLayout>

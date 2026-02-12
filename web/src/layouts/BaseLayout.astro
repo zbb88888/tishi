@@ -1,0 +1,51 @@
+---
+import '../styles/global.css';
+
+interface Props {
+  title: string;
+  description?: string;
+}
+
+const { title, description = 'tishi — 追踪 GitHub AI Top 100 热门开源项目' } = Astro.props;
+---
+
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content={description} />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>{title} | tishi</title>
+  </head>
+  <body class="min-h-screen bg-gray-50 text-gray-900 antialiased">
+    <header class="sticky top-0 z-50 border-b border-gray-200 bg-white/80 backdrop-blur-md">
+      <nav class="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6">
+        <a href="/" class="flex items-center gap-2 text-xl font-bold text-primary-600">
+          <span>📡</span>
+          <span>tishi</span>
+        </a>
+        <ul class="flex items-center gap-6 text-sm font-medium text-gray-600">
+          <li><a href="/" class="hover:text-primary-600 transition-colors">排行榜</a></li>
+          <li><a href="/categories" class="hover:text-primary-600 transition-colors">分类</a></li>
+          <li><a href="/blog" class="hover:text-primary-600 transition-colors">博客</a></li>
+          <li>
+            <a href="https://github.com/zbb88888/tishi" target="_blank" rel="noopener"
+               class="hover:text-primary-600 transition-colors">GitHub</a>
+          </li>
+        </ul>
+      </nav>
+    </header>
+
+    <main class="mx-auto max-w-7xl px-4 py-8 sm:px-6">
+      <slot />
+    </main>
+
+    <footer class="border-t border-gray-200 bg-white py-8">
+      <div class="mx-auto max-w-7xl px-4 text-center text-sm text-gray-500 sm:px-6">
+        <p>tishi — 自动追踪 GitHub AI Top 100 热门项目</p>
+        <p class="mt-1">数据每日自动更新 · 开源项目</p>
+      </div>
+    </footer>
+  </body>
+</html>
