@@ -1,0 +1,21 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+---
+
+<BaseLayout title="页面未找到">
+  <div class="flex flex-col items-center justify-center py-24 text-center">
+    <div class="text-8xl font-bold text-gray-200">404</div>
+    <h1 class="mt-4 text-2xl font-semibold text-gray-900">页面未找到</h1>
+    <p class="mt-2 text-gray-500">您访问的页面不存在或已被移除</p>
+    <div class="mt-8 flex gap-4">
+      <a href="/"
+         class="inline-flex items-center gap-2 rounded-lg bg-primary-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-primary-700 transition-colors">
+        ← 返回排行榜
+      </a>
+      <a href="/blog"
+         class="inline-flex items-center gap-2 rounded-lg border border-gray-300 px-5 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
+        浏览博客
+      </a>
+    </div>
+  </div>
+</BaseLayout>

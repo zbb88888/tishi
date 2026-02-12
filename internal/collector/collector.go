@@ -238,7 +238,7 @@ func (c *Collector) newGitHubClient(ctx context.Context) *github.Client {
 }
 
 func (c *Collector) waitForRateLimit(resp *github.Response) {
-	if resp.Rate.Reset.Time.After(time.Now()) {
+	if resp.Rate.Reset.After(time.Now()) {
 		wait := time.Until(resp.Rate.Reset.Time) + time.Second
 		c.log.Info("等待 rate limit 重置", zap.Duration("wait", wait))
 		time.Sleep(wait)

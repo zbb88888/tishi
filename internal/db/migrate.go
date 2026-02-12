@@ -1,12 +1,13 @@
 package db
 
 import (
-"embed"
-"fmt"
+	"embed"
+	"errors"
+	"fmt"
 
-"github.com/golang-migrate/migrate/v4"
-_ "github.com/golang-migrate/migrate/v4/database/postgres"
-"github.com/golang-migrate/migrate/v4/source/iofs"
+	"github.com/golang-migrate/migrate/v4"
+	_ "github.com/golang-migrate/migrate/v4/database/postgres"
+	"github.com/golang-migrate/migrate/v4/source/iofs"
 )
 
 //go:embed migrations/*.sql
@@ -24,11 +25,18 @@ func RunMigrations(dsn string, direction string) error {
 	if err != nil {
 		return fmt.Errorf("creating migrator: %w", err)
 	}
-	defer m.Close()
+	defer func() {
+		srcErr, dbErr := m.Close()
+		if srcErr != nil || dbErr != nil {
+			// close errors are non-fatal during migration
+			_ = srcErr
+			_ = dbErr
+		}
+	}()
 
 	switch direction {
 	case "up":
-		if err := m.Up(); err != nil && err != migrate.ErrNoChange {
+		if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
 			return fmt.Errorf("running migrations up: %w", err)
 		}
 	case "down":

@@ -174,7 +174,7 @@ func (a *Analyzer) updateDatabase(ctx context.Context, projects []*projectData) 
 	if err != nil {
 		return fmt.Errorf("beginning transaction: %w", err)
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }()
 
 	today := time.Now().UTC().Truncate(24 * time.Hour)
 

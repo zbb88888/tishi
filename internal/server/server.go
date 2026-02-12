@@ -11,6 +11,8 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap"
 
 	"github.com/zbb88888/tishi/internal/config"
@@ -18,18 +20,20 @@ import (
 
 // Server is the tishi HTTP API server.
 type Server struct {
-	pool   *pgxpool.Pool
-	log    *zap.Logger
-	cfg    *config.Config
-	router chi.Router
+	pool    *pgxpool.Pool
+	log     *zap.Logger
+	cfg     *config.Config
+	router  chi.Router
+	metrics *Metrics
 }
 
 // New creates a new Server instance.
 func New(pool *pgxpool.Pool, log *zap.Logger, cfg *config.Config) *Server {
 	s := &Server{
-		pool: pool,
-		log:  log,
-		cfg:  cfg,
+		pool:    pool,
+		log:     log,
+		cfg:     cfg,
+		metrics: NewMetrics(prometheus.DefaultRegisterer),
 	}
 	s.router = s.setupRouter()
 	return s
@@ -47,6 +51,7 @@ func (s *Server) setupRouter() chi.Router {
 	// Global middleware
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
+	r.Use(s.metrics.Middleware)
 	r.Use(zapLoggerMiddleware(s.log))
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Compress(5))
@@ -59,8 +64,9 @@ func (s *Server) setupRouter() chi.Router {
 		MaxAge:           300,
 	}))
 
-	// Health check
+	// Health check & metrics
 	r.Get("/healthz", s.handleHealthz)
+	r.Handle("/metrics", promhttp.Handler())
 
 	// API v1
 	r.Route("/api/v1", func(r chi.Router) {
@@ -103,7 +109,7 @@ type apiError struct {
 func writeJSON(w http.ResponseWriter, status int, v interface{}) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(v)
+	_ = json.NewEncoder(w).Encode(v)
 }
 
 func writeError(w http.ResponseWriter, status int, code, message string) {
@@ -265,7 +271,7 @@ func (s *Server) handleListProjects(w http.ResponseWriter, r *http.Request) {
 
 	// Get total count
 	var total int
-	s.pool.QueryRow(r.Context(), `SELECT COUNT(*) FROM projects WHERE is_archived = FALSE`).Scan(&total)
+	_ = s.pool.QueryRow(r.Context(), `SELECT COUNT(*) FROM projects WHERE is_archived = FALSE`).Scan(&total)
 
 	writeJSON(w, http.StatusOK, apiResponse{
 		Data: projects,
@@ -434,7 +440,7 @@ func (s *Server) handleListPosts(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var total int
-	s.pool.QueryRow(r.Context(), `SELECT COUNT(*) FROM blog_posts WHERE published_at IS NOT NULL`).Scan(&total)
+	_ = s.pool.QueryRow(r.Context(), `SELECT COUNT(*) FROM blog_posts WHERE published_at IS NOT NULL`).Scan(&total)
 
 	w.Header().Set("Cache-Control", "public, max-age=86400")
 	writeJSON(w, http.StatusOK, apiResponse{

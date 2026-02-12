@@ -1,13 +1,19 @@
 ---
 import BaseLayout from '../../layouts/BaseLayout.astro';
+import Pagination from '../../components/Pagination.astro';
 import { getPosts, type BlogPost } from '../../lib/api';
 
+const currentPage = Number(Astro.url.searchParams.get('page') || '1');
+const perPage = 10;
+
 let posts: BlogPost[] = [];
+let totalPages = 1;
 let error: string | null = null;
 
 try {
-  const res = await getPosts(1, 20);
+  const res = await getPosts(currentPage, perPage);
   posts = res.data;
+  totalPages = res.meta?.total_pages || 1;
 } catch (e) {
   error = '暂时无法加载博客文章';
 }
@@ -64,5 +70,7 @@ function typeLabel(type: string): string {
         </a>
       ))}
     </div>
+
+    <Pagination currentPage={currentPage} totalPages={totalPages} baseUrl="/blog" />
   )}
 </BaseLayout>

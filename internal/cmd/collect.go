@@ -1,14 +1,14 @@
 package cmd
 
 import (
-"fmt"
+	"fmt"
 
-"github.com/spf13/cobra"
-"go.uber.org/zap"
+	"github.com/spf13/cobra"
+	"go.uber.org/zap"
 
-"github.com/zbb88888/tishi/internal/collector"
-"github.com/zbb88888/tishi/internal/config"
-"github.com/zbb88888/tishi/internal/db"
+	"github.com/zbb88888/tishi/internal/collector"
+	"github.com/zbb88888/tishi/internal/config"
+	"github.com/zbb88888/tishi/internal/db"
 )
 
 var collectCmd = &cobra.Command{

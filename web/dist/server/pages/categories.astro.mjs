@@ -1,7 +1,8 @@
 /* empty css                                  */
 import { g as createComponent, j as renderComponent, r as renderTemplate, m as maybeRenderHead } from '../chunks/astro/server_CCdsDrdo.mjs';
 import 'kleur/colors';
-import { b as getCategories, $ as $$BaseLayout } from '../chunks/api_CaJSCn5g.mjs';
+import { $ as $$BaseLayout } from '../chunks/BaseLayout_CnYfUBOf.mjs';
+import { b as getCategories } from '../chunks/api_CbtYqGEw.mjs';
 export { renderers } from '../renderers.mjs';
 
 const $$Categories = createComponent(async ($$result, $$props, $$slots) => {

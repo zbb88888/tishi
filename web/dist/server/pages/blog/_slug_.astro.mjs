@@ -1,7 +1,8 @@
 /* empty css                                     */
 import { f as createAstro, g as createComponent, j as renderComponent, r as renderTemplate, m as maybeRenderHead, u as unescapeHTML } from '../../chunks/astro/server_CCdsDrdo.mjs';
 import 'kleur/colors';
-import { g as getPost, $ as $$BaseLayout } from '../../chunks/api_CaJSCn5g.mjs';
+import { $ as $$BaseLayout } from '../../chunks/BaseLayout_CnYfUBOf.mjs';
+import { g as getPost } from '../../chunks/api_CbtYqGEw.mjs';
 export { renderers } from '../../renderers.mjs';
 
 const $$Astro = createAstro("https://tishi.dev");

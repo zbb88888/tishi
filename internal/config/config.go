@@ -3,11 +3,12 @@
 package config
 
 import (
-"fmt"
-"strings"
-"time"
+	"errors"
+	"fmt"
+	"strings"
+	"time"
 
-"github.com/spf13/viper"
+	"github.com/spf13/viper"
 )
 
 // Config holds all application configuration.
@@ -130,7 +131,8 @@ func Load(cfgFile string) (*Config, error) {
 
 	// Read config file (optional)
 	if err := viper.ReadInConfig(); err != nil {
-		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
+		var notFound viper.ConfigFileNotFoundError
+		if !errors.As(err, &notFound) {
 			return nil, fmt.Errorf("reading config file: %w", err)
 		}
 		// Config file not found is acceptable - use defaults + env vars
@@ -209,16 +211,16 @@ func setDefaults() {
 
 	// Default search queries
 	viper.SetDefault("github.search_queries", []string{
-"topic:llm stars:>100",
-"topic:large-language-model stars:>100",
-"topic:ai-agent stars:>100",
-"topic:machine-learning stars:>500",
-"topic:deep-learning stars:>500",
-"topic:stable-diffusion stars:>100",
-"topic:rag stars:>100",
-"topic:transformers stars:>200",
-"topic:vector-database stars:>100",
-"topic:text-to-speech stars:>100",
-"topic:generative-ai stars:>100",
-})
+		"topic:llm stars:>100",
+		"topic:large-language-model stars:>100",
+		"topic:ai-agent stars:>100",
+		"topic:machine-learning stars:>500",
+		"topic:deep-learning stars:>500",
+		"topic:stable-diffusion stars:>100",
+		"topic:rag stars:>100",
+		"topic:transformers stars:>200",
+		"topic:vector-database stars:>100",
+		"topic:text-to-speech stars:>100",
+		"topic:generative-ai stars:>100",
+	})
 }

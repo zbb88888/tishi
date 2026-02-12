@@ -1,8 +1,9 @@
 /* empty css                                     */
 import { f as createAstro, g as createComponent, r as renderTemplate, k as defineScriptVars, i as addAttribute, m as maybeRenderHead, j as renderComponent } from '../../chunks/astro/server_CCdsDrdo.mjs';
 import 'kleur/colors';
-import { c as getProject, $ as $$BaseLayout } from '../../chunks/api_CaJSCn5g.mjs';
+import { $ as $$BaseLayout } from '../../chunks/BaseLayout_CnYfUBOf.mjs';
 import 'clsx';
+import { c as getProject } from '../../chunks/api_CbtYqGEw.mjs';
 export { renderers } from '../../renderers.mjs';
 
 var __freeze = Object.freeze;

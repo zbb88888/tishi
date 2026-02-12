@@ -67,7 +67,7 @@ func New(pool *pgxpool.Pool, log *zap.Logger, cfg *config.Config) *Scheduler {
 	}
 }
 
-// Start begins the scheduler and blocks until ctx is cancelled.
+// Start begins the scheduler and blocks until ctx is canceled.
 func (s *Scheduler) Start(ctx context.Context) error {
 	// Daily collection
 	if _, err := s.cron.AddFunc(s.cfg.Scheduler.CollectCron, func() {

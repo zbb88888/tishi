@@ -1,8 +1,18 @@
-# golangci-lint configuration
+# golangci-lint v2 configuration
 # https://golangci-lint.run/usage/configuration/
+version: "2"
+
 run:
   timeout: 5m
   modules-download-mode: readonly
+
+formatters:
+  enable:
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/zbb88888/tishi
 
 linters:
   enable:
@@ -10,54 +20,44 @@ linters:
     - govet
     - staticcheck
     - unused
-    - gosimple
     - ineffassign
-    - typecheck
-    - gofmt
-    - goimports
     - misspell
     - unconvert
     - goconst
     - bodyclose
     - nilerr
     - errorlint
-    - prealloc
 
-linters-settings:
-  govet:
-    enable-all: true
-    disable:
-      - fieldalignment
-      - shadow
+  settings:
+    govet:
+      enable-all: true
+      disable:
+        - fieldalignment
+        - shadow
 
-  goconst:
-    min-len: 3
-    min-occurrences: 3
+    goconst:
+      min-len: 3
+      min-occurrences: 3
 
-  misspell:
-    locale: US
+    misspell:
+      locale: US
 
-  goimports:
-    local-prefixes: github.com/zbb88888/tishi
+    errorlint:
+      errorf: true
+      asserts: true
+      comparison: true
 
-  errorlint:
-    errorf: true
-    asserts: true
-    comparison: true
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters:
+          - goconst
+          - bodyclose
+          - errcheck
 
-issues:
-  exclude-rules:
-    # Test files are allowed to use dot imports and have longer functions
-    - path: _test\.go
-      linters:
-        - goconst
-        - bodyclose
-        - errcheck
+      - path: cmd/
+        linters:
+          - unused
 
-    # Allow unused parameters in main
-    - path: cmd/
-      linters:
-        - unused
-
-  max-issues-per-linter: 50
-  max-same-issues: 10
+    max-issues-per-linter: 50
+    max-same-issues: 10
