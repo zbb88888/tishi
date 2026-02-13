@@ -5,8 +5,12 @@
 ## 当前状态
 
 - **版本**: v1.0-dev
-- **分支**: main
-- **阶段**: Phase 0-4 全部完成，v1.0 核心功能就绪
+- **分支**: main (`1c61c3c`)
+- **阶段**: Phase 0-4 代码全部完成，**尚未跑过真实数据**
+- **Git**: 6 commits 全部推送至 origin/main
+- **Go**: 27 个源文件，44 个单元测试全绿
+- **前端**: Astro SSG 8 类页面，682ms 构建
+- **数据**: `data/` 目录结构+Schema 就绪，rankings/projects/posts/snapshots 均空
 
 ## 已完成
 
@@ -127,3 +131,29 @@ data/                                # JSON 数据目录 (Git 同步)
 ├── categories.json                  # 12 个 AI 分类
 └── meta.json                        # 元信息
 ```
+
+---
+
+## 待办事项
+
+### P0 — 端到端验证（核心闭环）
+
+- [ ] 配置 `config.yaml`（GitHub token + LLM API key）
+- [ ] 首次 pipeline 运行：`tishi scrape → score → analyze → review → push`
+- [ ] 用真实 data/ 验证 Astro SSG 构建（`make web-build`）
+- [ ] 修复首次 E2E 暴露的 runtime bugs
+
+### P1 — 生产化加固
+
+- [ ] `.gitignore` 补充 `config.yaml`（防止 API key 泄露）
+- [ ] 确定 `data/` Git 追踪策略（同仓 or 独立 repo）
+- [ ] Machine A crontab：每日 `tishi scrape && score && analyze && push`
+- [ ] Machine B crontab：每日 `deploy.sh`（git pull + build + rsync）
+
+### P2 — v1.x 功能增强
+
+- [ ] sitemap.xml + Open Graph meta（SEO）
+- [ ] RSS Feed
+- [ ] Dark Mode
+- [ ] Topic 订阅 / 邮件订阅
+- [ ] 项目对比功能
