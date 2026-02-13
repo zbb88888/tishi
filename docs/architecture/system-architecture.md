@@ -2,103 +2,89 @@
 
 ## 架构总览
 
-tishi 采用经典的 **采集-存储-分析-展示** 四层架构，所有组件通过 PostgreSQL 解耦。
+tishi v1.0 采用 **三阶段完全解耦** 架构，通过 JSON 文件 + Git 仓库交换数据，无共享数据库。
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                          tishi 系统架构                              │
-├─────────────────────────────────────────────────────────────────────┤
-│                                                                     │
-│   ┌──────────┐     ┌──────────┐     ┌───────────────┐              │
-│   │ GitHub   │────▶│Collector │────▶│  PostgreSQL   │              │
-│   │ API      │     │ (Go)     │     │               │              │
-│   └──────────┘     └──────────┘     │  - projects   │              │
-│                                      │  - snapshots  │              │
-│   ┌──────────┐                      │  - categories │              │
-│   │Scheduler │──── 触发 ──────┐     │  - blog_posts │              │
-│   │ (Go Cron)│               │     └───────┬───────┘              │
-│   └──────────┘               │             │                       │
-│        │                     │             │                       │
-│        ├── 触发 ─▶ Collector  │             ▼                       │
-│        ├── 触发 ─▶ Analyzer ◀┘     ┌──────────────┐               │
-│        └── 触发 ─▶ Content         │  Analyzer    │               │
-│                    Generator       │  (Go)        │               │
-│                         │          │  - 热度评分    │               │
-│                         │          │  - 趋势检测    │               │
-│                         │          │  - 分类打标    │               │
-│                         │          └──────────────┘               │
-│                         ▼                                          │
-│                  ┌──────────────┐                                   │
-│                  │ Content      │                                   │
-│                  │ Generator    │                                   │
-│                  │ (Go)         │                                   │
-│                  │ - 周报/月报   │                                   │
-│                  │ - Markdown   │                                   │
-│                  └──────┬───────┘                                   │
-│                         │                                          │
-│                         ▼                                          │
-│   ┌──────────────────────────────────────────┐                     │
-│   │              API Server (Go)              │                    │
-│   │  GET /api/v1/projects                     │                    │
-│   │  GET /api/v1/projects/:id/trends          │                    │
-│   │  GET /api/v1/rankings                     │                    │
-│   │  GET /api/v1/posts                        │                    │
-│   └──────────────────┬───────────────────────┘                     │
-│                      │                                             │
-│                      ▼                                             │
-│   ┌──────────────────────────────────────────┐                     │
-│   │           Astro SSG (Frontend)            │                    │
-│   │  - 首页排行榜                               │                    │
-│   │  - 项目详情 + 趋势图表                       │                    │
-│   │  - 博客文章列表                              │                    │
-│   │  - RSS Feed                               │                    │
-│   └──────────────────────────────────────────┘                     │
-│                                                                     │
-└─────────────────────────────────────────────────────────────────────┘
+Stage 1: 采集+分析 (Machine A)         Stage 2: SSG 构建 (Machine B)         Stage 3: 发布 (Machine C)
+┌──────────────────────────┐           ┌──────────────────────┐           ┌─────────────────┐
+│  GitHub Trending HTML    │           │  git pull data/      │           │  Nginx / CDN    │
+│         ↓                │           │       ↓              │           │  serve dist/    │
+│  Colly 爬取 Trending     │           │  读取 JSON 数据       │           │       ↓         │
+│         ↓                │           │       ↓              │           │  用户浏览器      │
+│  AI 项目过滤 (keywords)  │  git push │  Astro SSG build     │  rsync/  │                 │
+│         ↓                │ ────────→ │       ↓              │ ───────→ │                 │
+│  GitHub API 补充数据      │  data/    │  dist/ 静态 HTML     │  dist/   │                 │
+│         ↓                │           └──────────────────────┘           └─────────────────┘
+│  LLM 中文深度分析         │
+│  (DeepSeek / Qwen)       │
+│         ↓                │
+│  data/ JSON 输出          │
+└──────────────────────────┘
 ```
 
 ## 模块职责
 
-| 模块 | 进程 | 职责 | 触发方式 |
-|------|------|------|----------|
-| **Collector** | Go binary | 调用 GitHub API 采集项目数据，写入 PostgreSQL | Scheduler 定时触发 |
-| **Analyzer** | Go binary | 计算热度评分，检测趋势变化，分类打标 | Scheduler 在采集完成后触发 |
-| **Content Generator** | Go binary | 基于分析结果生成 Markdown 博客文章 | Scheduler 周/月定时触发 |
-| **API Server** | Go HTTP server | 提供 RESTful API，供前端消费 | 常驻运行 |
-| **Scheduler** | Go cron | 编排定时任务（采集→分析→生成） | 常驻运行 |
-| **Web Frontend** | Astro SSG | 静态站点，展示排行榜/图表/博客 | 构建时生成，Nginx 托管 |
-| **PostgreSQL** | 数据库 | 持久化所有数据 | 常驻运行 |
+| 模块 | 阶段 | 职责 | 输入 | 输出 |
+|------|------|------|------|------|
+| **Scraper** | Stage 1 | 爬取 GitHub Trending HTML，提取项目列表 | Trending 页面 | 候选项目列表 |
+| **Filter** | Stage 1 | 基于 12 类 AI 关键词过滤非 AI 项目 | 候选列表 + categories.json | AI 项目列表 |
+| **Enricher** | Stage 1 | 调用 GitHub API 补充 README/详细指标 | AI 项目列表 | 完整项目数据 |
+| **LLM Analyzer** | Stage 1 | 调用 DeepSeek/Qwen 生成中文项目报告 | README + 项目元数据 | analysis 字段 (JSON) |
+| **Scorer** | Stage 1 | 多维加权评分 + 排名计算 | 项目数据 + 快照历史 | ranking JSON |
+| **Astro SSG** | Stage 2 | 读取 data/ JSON，生成静态 HTML 页面 | data/*.json | dist/ |
+| **Nginx/CDN** | Stage 3 | 托管 dist/ 静态文件 | dist/ | HTTP 响应 |
 
-## 模块间通信
+## 数据交换
 
-所有模块通过 **PostgreSQL** 作为数据总线进行间接通信，不使用消息队列：
+模块间通过 **JSON 文件 + Git** 交换数据，不使用数据库或消息队列：
 
 ```
-Collector ──写入──▶ PostgreSQL ◀──读取── Analyzer
-                        ▲                    │
-                        │                    │写入评分/标签
-                        │                    ▼
-                        ├◀─────── Content Generator（读取分析结果，写入博客）
-                        │
-                        └◀─────── API Server（只读查询）
+Scraper → Filter → Enricher → LLM Analyzer → Scorer
+    ↓         ↓         ↓            ↓            ↓
+    └─────────┴─────────┴────────────┴────────────┘
+                         ↓
+                   data/ 目录 (JSON)
+                         ↓
+                      git push
+                         ↓
+                   Stage 2 git pull
+                         ↓
+                   Astro SSG build
+```
+
+**数据目录结构**：
+
+```
+data/
+├── projects/          # 每个项目一个 JSON 文件 (owner__repo.json)
+├── snapshots/         # 每日快照 JSONL (YYYY-MM-DD.jsonl)
+├── rankings/          # 每日排行 JSON (YYYY-MM-DD.json)
+├── posts/             # 博客文章 (slug.json)
+├── schemas/           # JSON Schema 定义
+├── categories.json    # 12 个 AI 分类 + 关键词映射
+└── meta.json          # 版本和元信息
 ```
 
 **设计理由**：
-- 个人项目，数据量小（Top 100 × 365天/年 ≈ 36,500 条快照/年），无需消息队列
-- PostgreSQL 事务保证数据一致性
-- 模块间通过数据库解耦，可独立运行和测试
+
+- 三阶段可运行在不同机器上，通过 Git 同步，无需网络直连
+- JSON 文件人类可读、版本可追溯、易于调试
+- 无状态构建：任何阶段失败可独立重跑，天然幂等
 
 ## 进程模型
 
-生产环境下，所有 Go 模块编译为**单一二进制文件**，通过子命令启动不同模式：
+单一 Go 二进制，通过子命令运行 Stage 1 各步骤：
 
 ```bash
-tishi server     # 启动 API Server + Scheduler（常驻）
-tishi collect    # 手动触发一次数据采集
-tishi analyze    # 手动触发一次趋势分析
-tishi generate   # 手动触发一次内容生成
-tishi migrate    # 执行数据库迁移
+tishi scrape          # 爬取 Trending + AI 过滤 + GitHub API 补充
+tishi analyze         # LLM 深度分析（可选 --dry-run 跳过 API 调用）
+tishi score           # 评分排名 + 生成 ranking JSON
+tishi generate        # 生成博客文章 JSON
+tishi push            # git add + commit + push data/
+tishi version         # 打印版本号
 ```
+
+Stage 2 和 Stage 3 不需要 Go 二进制，直接使用 npm/Nginx。
 
 ## 关键设计决策
 

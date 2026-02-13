@@ -2,64 +2,64 @@
 
 ## 愿景
 
-tishi（提示）致力于成为 AI 开源生态的"风向标"——帮助开发者快速了解 GitHub 上 AI 领域最活跃、最有潜力的开源项目，捕捉技术趋势变化。
+**tishi（提示）** 是一个面向中文开发者的 AI 开源项目深度分析平台。数据来源于 [GitHub Trending](https://github.com/trending)，通过 LLM 自动生成中文项目报告，帮助开发者快速理解 AI 领域最活跃的开源项目——定位、功能、优势、适用场景一目了然。
 
-## 目标
+## 核心差异点（vs GitHub Trending）
 
-1. **每日自动采集** GitHub 上 AI 相关项目的核心指标（Star、Fork、Issue、Contributor 等）
-2. **维护 Top 100 排行榜**，支持按热度评分、Star 增速、分类等多维度排序
-3. **趋势可视化**，提供 Star 增长曲线、热度变化等图表
-4. **自动生成博客内容**，包括周报、月报、新项目速递
-5. **细分领域分类**，覆盖 LLM / Agent / RAG / Diffusion / MLOps / Vector DB 等方向
+| 维度 | GitHub Trending | tishi |
+|------|----------------|-------|
+| 语言 | 英文 | **中文深度解读**（LLM 翻译+分析） |
+| 范围 | 全领域 | **AI 垂直精选**，12 个 AI 子方向分类 |
+| 深度 | 仅 repo name + description | **完整项目报告**（定位/功能/优势/对比/场景） |
+| 历史 | 无持久化 | **趋势追踪**，每日快照，Star 增长曲线 |
 
-## 核心功能
+## 12 个 AI 分类
 
-### 数据采集
+LLM · Agent · RAG · Diffusion · MLOps · Vector-DB · Framework · Tool · Multimodal · Speech · RL · Other
 
-- 定时通过 GitHub API（Search API + GraphQL）采集 AI 相关项目
-- 基于关键词库过滤 AI 领域项目（详见 [种子数据](data/seed-data.md)）
-- 支持增量更新，避免重复采集
+## 架构概要
 
-### 趋势排行榜
+三阶段完全解耦，JSON 文件 + Git 仓库交换数据，无共享数据库：
 
-- Top 100 项目实时排名
-- 多维排序：热度评分 / Star 总量 / 日增 Star / 周增 Star
-- 按分类筛选：LLM / Agent / RAG / Diffusion / MLOps 等
+```
+Stage 1 (Machine A)                Stage 2 (Machine B)         Stage 3 (Machine C)
+┌─────────────────────┐            ┌──────────────────┐        ┌────────────────┐
+│ GitHub Trending HTML │            │  Git pull data/  │        │  Nginx / CDN   │
+│        ↓             │            │       ↓          │        │  serve dist/   │
+│   Colly 爬取+过滤    │   git push │  Astro SSG build │        │       ↓        │
+│        ↓             │ ─────────→ │       ↓          │ ────→  │  用户浏览器     │
+│   LLM 中文分析       │   data/    │   dist/ 静态文件  │  dist/ │                │
+│        ↓             │            └──────────────────┘        └────────────────┘
+│   data/ JSON 输出    │
+└─────────────────────┘
+```
 
-### 趋势分析
+## LLM 分析内容
 
-- 每日快照存储，支持任意时间范围的趋势查询
-- 热度评分模型：综合 Star 增速、Fork 活跃度、Issue 响应速度等加权计算
-- 异常检测：识别突然爆火或持续下滑的项目
+每个 AI 项目自动生成的中文报告包含：
 
-### 博客内容
-
-- 自动生成周报/月报 Markdown 文件
-- 新项目速递：首次进入 Top 100 的项目专题
-- 排名变动分析
-
-### 项目详情
-
-- 项目基本信息：描述、语言、License、创建时间
-- 历史趋势图表：Star/Fork/Issue 增长曲线
-- 社区活跃度指标
+- **项目定位** — 这个项目是做什么的，解决什么问题
+- **核心功能** — 主要功能点清单
+- **技术优势** — 相比同类项目的差异化优势
+- **技术栈** — 使用的语言/框架/底层技术
+- **适用场景** — 什么情况下适合用
+- **同类对比** — 与竞品的横向对比
+- **生态系统** — 上下游依赖和集成
 
 ## 目标用户
 
-- 关注 AI 开源生态的 **开发者**
-- 需要技术选型参考的 **架构师**
-- 追踪 AI 行业动态的 **技术管理者**
-- 希望发现新项目的 **开源爱好者**
+- 关注 AI 开源动态的 **中文开发者**
+- 需要 AI 技术选型参考的 **架构师**
+- 追踪 AI 领域趋势的 **技术管理者**
 
-## 非目标（Explicit Non-Goals）
+## 非目标
 
+- 不做通用 GitHub 项目追踪（仅 AI 领域）
 - 不做 AI 模型训练 / 推理服务
-- 不做通用 GitHub 项目追踪（仅聚焦 AI 领域）
-- 不做社交功能（评论、点赞等）
+- 不做社交功能（评论、点赞）
 - 不做付费功能
 
-## 参考链接
+## 参考
 
-- [GitHub Trending](https://github.com/trending)
-- [GitHub Search API](https://docs.github.com/en/rest/search)
-- [OSS Insight](https://ossinsight.io/) — 类似项目参考
+- [GitHub Trending](https://github.com/trending) — 数据来源
+- [数据契约 Schema](../data/schemas/) — JSON Schema 定义

@@ -1,117 +1,129 @@
 # 数据字典
 
-## projects 表
+## Project JSON (data/projects/{owner}__{repo}.json)
 
-| 字段 | 类型 | 可空 | 默认值 | 说明 |
-|------|------|------|--------|------|
-| `id` | BIGSERIAL | N | auto | 主键 |
-| `github_id` | BIGINT | N | - | GitHub 仓库唯一 ID，用于 Upsert |
-| `full_name` | VARCHAR(255) | N | - | `owner/repo` 格式，如 `langchain-ai/langchain` |
-| `description` | TEXT | Y | NULL | 项目描述 |
-| `language` | VARCHAR(50) | Y | NULL | 主要编程语言，如 `Python`、`TypeScript` |
-| `license` | VARCHAR(50) | Y | NULL | 开源协议 SPDX ID，如 `MIT`、`Apache-2.0` |
-| `topics` | TEXT[] | N | `{}` | GitHub Topics 标签数组 |
-| `homepage` | VARCHAR(500) | Y | NULL | 项目主页 URL |
-| `created_at_gh` | TIMESTAMPTZ | Y | NULL | GitHub 仓库创建时间 |
-| `pushed_at` | TIMESTAMPTZ | Y | NULL | 最后一次 Push 时间 |
-| `metadata` | JSONB | N | `{}` | 扩展字段，存储不常用但可能有用的信息 |
-| `stargazers_count` | INT | N | 0 | 当前 Star 数 |
-| `forks_count` | INT | N | 0 | 当前 Fork 数 |
-| `open_issues_count` | INT | N | 0 | 当前 Open Issue 数 |
-| `watchers_count` | INT | N | 0 | 当前 Watcher 数 |
-| `score` | NUMERIC(5,2) | N | 0 | 热度评分，0-100 |
-| `rank` | INT | Y | NULL | 当前 Top 100 排名，不在榜内为 NULL |
-| `first_seen_at` | TIMESTAMPTZ | N | NOW() | tishi 首次采集到该项目的时间 |
-| `is_archived` | BOOLEAN | N | FALSE | 项目是否已归档/删除 |
-| `created_at` | TIMESTAMPTZ | N | NOW() | 记录创建时间 |
-| `updated_at` | TIMESTAMPTZ | N | NOW() | 记录最后更新时间（trigger 自动更新） |
+完整 JSON Schema 见 `data/schemas/project.schema.json`。
 
-### metadata JSONB 示例
-
-```json
-{
-    "default_branch": "main",
-    "contributor_count": 1234,
-    "has_wiki": true,
-    "has_discussions": true,
-    "size_kb": 52340,
-    "github_url": "https://github.com/langchain-ai/langchain"
-}
-```
-
----
-
-## daily_snapshots 表
-
-| 字段 | 类型 | 可空 | 默认值 | 说明 |
-|------|------|------|--------|------|
-| `id` | BIGSERIAL | N | auto | 主键 |
-| `project_id` | BIGINT | N | - | 外键 → projects.id，级联删除 |
-| `snapshot_date` | DATE | N | - | 快照日期（UTC），与 project_id 联合唯一 |
-| `stargazers_count` | INT | N | 0 | 当日 Star 数 |
-| `forks_count` | INT | N | 0 | 当日 Fork 数 |
-| `open_issues_count` | INT | N | 0 | 当日 Open Issue 数 |
-| `watchers_count` | INT | N | 0 | 当日 Watcher 数 |
-| `score` | NUMERIC(5,2) | Y | NULL | 当日热度评分 |
-| `rank` | INT | Y | NULL | 当日排名 |
-| `created_at` | TIMESTAMPTZ | N | NOW() | 记录创建时间 |
-
-**唯一约束**：`UNIQUE(project_id, snapshot_date)` — 每个项目每天只有一条快照。
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `id` | string | Y | `owner__repo` 格式，文件名即 ID |
+| `full_name` | string | Y | `owner/repo` 格式 |
+| `owner` | string | Y | 仓库所有者 |
+| `repo` | string | Y | 仓库名称 |
+| `description` | string | N | 项目描述 |
+| `language` | string | N | 主要编程语言 |
+| `license` | string | N | SPDX ID，如 `MIT`、`Apache-2.0` |
+| `topics` | string[] | N | GitHub Topics 标签 |
+| `homepage` | string | N | 项目主页 URL |
+| `stars` | integer | Y | 当前 Star 数 |
+| `forks` | integer | Y | 当前 Fork 数 |
+| `open_issues` | integer | N | 当前 Open Issue 数 |
+| `created_at` | string | N | GitHub 仓库创建时间 (ISO 8601) |
+| `pushed_at` | string | N | 最后推送时间 (ISO 8601) |
+| `trending` | object | N | Trending 相关数据 |
+| `trending.daily_stars` | integer | N | 当日 Star 增长 |
+| `trending.weekly_stars` | integer | N | 当周 Star 增长 |
+| `trending.rank_daily` | integer | N | 当日 Trending 排名 |
+| `trending.last_seen_trending` | string | N | 最近一次出现在 Trending 的日期 |
+| `analysis` | object | N | LLM 中文分析结果 |
+| `analysis.status` | string | Y* | `draft` / `published` / `rejected` |
+| `analysis.model` | string | N | LLM 模型名称 |
+| `analysis.summary` | string | N | 一句话中文概括 |
+| `analysis.positioning` | string | N | 项目定位 |
+| `analysis.features` | string[] | N | 核心功能列表 |
+| `analysis.advantages` | string | N | 技术优势 |
+| `analysis.tech_stack` | string | N | 核心技术栈 |
+| `analysis.use_cases` | string | N | 适用场景 |
+| `analysis.comparison` | array | N | 同类对比 [{name, difference}] |
+| `analysis.ecosystem` | string | N | 上下游生态 |
+| `analysis.generated_at` | string | N | 分析生成时间 (ISO 8601) |
+| `analysis.reviewed_at` | string | N | 人工审核时间 (ISO 8601) |
+| `analysis.token_usage` | object | N | LLM token 用量 |
+| `categories` | string[] | N | AI 分类标签（slug 数组） |
+| `score` | number | N | 热度评分 0-100 |
+| `rank` | integer | N | 当前排名 |
+| `first_seen_at` | string | N | 首次采集时间 (ISO 8601) |
+| `updated_at` | string | Y | 最后更新时间 (ISO 8601) |
 
 ---
 
-## categories 表
+## Snapshot JSONL (data/snapshots/{date}.jsonl)
 
-| 字段 | 类型 | 可空 | 默认值 | 说明 |
-|------|------|------|--------|------|
-| `id` | SERIAL | N | auto | 主键 |
-| `name` | VARCHAR(100) | N | - | 分类名称（中文），如 `大语言模型` |
-| `slug` | VARCHAR(100) | N | - | URL 友好标识，如 `llm`，唯一 |
-| `parent_id` | INT | Y | NULL | 父分类 ID，支持树状分类（目前不用） |
-| `description` | TEXT | Y | NULL | 分类描述 |
-| `sort_order` | INT | N | 0 | 排序权重，越小越靠前 |
-| `created_at` | TIMESTAMPTZ | N | NOW() | 记录创建时间 |
+每行一个 JSON 对象，Schema 见 `data/schemas/snapshot.schema.json`。
 
----
-
-## project_categories 表
-
-| 字段 | 类型 | 可空 | 默认值 | 说明 |
-|------|------|------|--------|------|
-| `project_id` | BIGINT | N | - | 外键 → projects.id |
-| `category_id` | INT | N | - | 外键 → categories.id |
-| `confidence` | NUMERIC(3,2) | N | 1.0 | 分类置信度：1.0=精确匹配，0.8=关键词匹配，0.6=模糊匹配 |
-| `created_at` | TIMESTAMPTZ | N | NOW() | 关联创建时间 |
-
-**主键**：`(project_id, category_id)` — 多对多关联。
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `project_id` | string | Y | 项目 ID (`owner__repo`) |
+| `date` | string | Y | 快照日期 (YYYY-MM-DD) |
+| `stars` | integer | Y | 当日 Star 数 |
+| `forks` | integer | Y | 当日 Fork 数 |
+| `open_issues` | integer | N | 当日 Open Issue 数 |
+| `watchers` | integer | N | 当日 Watcher 数 |
+| `score` | number | N | 当日评分 |
+| `rank` | integer | N | 当日排名 |
+| `daily_stars` | integer | N | 当日 Star 增长 |
 
 ---
 
-## blog_posts 表
+## Ranking JSON (data/rankings/{date}.json)
 
-| 字段 | 类型 | 可空 | 默认值 | 说明 |
-|------|------|------|--------|------|
-| `id` | BIGSERIAL | N | auto | 主键 |
-| `title` | VARCHAR(500) | N | - | 文章标题 |
-| `slug` | VARCHAR(500) | N | - | URL 路径标识，唯一 |
-| `content` | TEXT | N | - | Markdown 格式文章内容 |
-| `post_type` | VARCHAR(20) | N | - | 文章类型枚举 |
-| `cover_image_url` | VARCHAR(500) | Y | NULL | 封面图片 URL |
-| `published_at` | TIMESTAMPTZ | Y | NULL | 发布时间，NULL 表示草稿 |
-| `created_at` | TIMESTAMPTZ | N | NOW() | 记录创建时间 |
-| `updated_at` | TIMESTAMPTZ | N | NOW() | 记录最后更新时间 |
+Schema 见 `data/schemas/ranking.schema.json`。
 
-### post_type 枚举值
-
-| 值 | 说明 |
-|-----|------|
-| `weekly` | AI 开源周报 |
-| `monthly` | AI 开源月报 |
-| `spotlight` | 新项目速递 |
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `date` | string | Y | 排名日期 (YYYY-MM-DD) |
+| `total` | integer | Y | 排名项目总数 |
+| `items[]` | array | Y | 排名条目列表 |
+| `items[].rank` | integer | Y | 排名 |
+| `items[].project_id` | string | Y | 项目 ID |
+| `items[].full_name` | string | Y | `owner/repo` |
+| `items[].summary` | string | N | 一句话中文概括 |
+| `items[].language` | string | N | 编程语言 |
+| `items[].category` | string | N | 主分类 |
+| `items[].stars` | integer | N | 总 Star 数 |
+| `items[].daily_stars` | integer | N | 日增 Star |
+| `items[].weekly_stars` | integer | N | 周增 Star |
+| `items[].score` | number | N | 评分 |
+| `items[].rank_change` | integer | N | 排名变化 (正=上升) |
 
 ---
+
+## Post JSON (data/posts/{slug}.json)
+
+Schema 见 `data/schemas/post.schema.json`。
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `slug` | string | Y | URL 路径标识 |
+| `title` | string | Y | 文章标题 |
+| `content` | string | Y | Markdown 格式内容 |
+| `post_type` | string | Y | `weekly` / `monthly` / `spotlight` |
+| `published_at` | string | Y | 发布时间 (ISO 8601) |
+| `projects` | string[] | N | 关联项目 ID 列表 |
+| `metadata` | object | N | 文章元数据 |
+
+---
+
+## Categories JSON (data/categories.json)
+
+12 个 AI 领域分类定义，详见 `data/categories.json` 文件。
+
+| 分类 slug | 中文名 | 说明 |
+|-----------|--------|------|
+| llm | 大语言模型 | GPT, LLaMA, Mistral 等 |
+| agent | AI Agent | 自主代理框架 |
+| rag | RAG 检索增强 | 检索增强生成 |
+| diffusion | 图像生成 | Stable Diffusion, DALL-E 等 |
+| mlops | MLOps | 模型训练/部署/监控 |
+| vector-db | 向量数据库 | 向量存储和检索 |
+| framework | 框架 | PyTorch, TensorFlow 等 |
+| tool | AI 工具 | AI 助手、代码生成 |
+| multimodal | 多模态 | 视觉语言模型等 |
+| speech | 语音 | TTS, ASR 等 |
+| rl | 强化学习 | RLHF, PPO 等 |
+| other | 其他 | 未分类 |
 
 ## 相关文档
 
-- [数据库 Schema](schema.md) — 完整 DDL
+- [JSON Schema](../../data/schemas/) — 完整 Schema 定义
 - [存储设计](../design/storage.md) — 设计决策

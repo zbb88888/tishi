@@ -1,231 +1,179 @@
-# 数据存储模块设计（Storage）
+# 数据存储设计（Storage）
 
 ## 概述
 
-tishi 使用 PostgreSQL 作为唯一数据存储，本文档定义数据模型设计与存储策略。
+tishi v1.0 使用 **JSON 文件 + Git** 作为唯一数据存储，替换原有的 PostgreSQL。所有数据以 JSON 格式存储在 `data/` 目录，通过 Git 仓库在三个 Stage 之间同步。
 
-## ER 关系图
-
-```
-┌──────────────┐       ┌───────────────────┐
-│  projects    │       │ daily_snapshots   │
-│──────────────│       │───────────────────│
-│ id (PK)      │◀──┐   │ id (PK)           │
-│ github_id    │   └──│ project_id (FK)   │
-│ full_name    │       │ snapshot_date     │
-│ description  │       │ stargazers_count  │
-│ language     │       │ forks_count       │
-│ license      │       │ open_issues_count │
-│ topics       │       │ watchers_count    │
-│ homepage     │       │ score             │
-│ score        │       │ rank              │
-│ rank         │       │ created_at        │
-│ metadata     │       └───────────────────┘
-│ first_seen_at│
-│ is_archived  │       ┌───────────────────┐
-│ created_at   │       │ categories        │
-│ updated_at   │       │───────────────────│
-└──────┬───────┘       │ id (PK)           │
-       │               │ name              │
-       │               │ slug              │
-       │               │ parent_id (FK)    │
-       │               │ description       │
-       │               └────────┬──────────┘
-       │                        │
-       ▼                        ▼
-┌──────────────────────────────────┐
-│   project_categories (M:N)      │
-│──────────────────────────────────│
-│ project_id (FK)                 │
-│ category_id (FK)                │
-└──────────────────────────────────┘
-
-┌──────────────────┐
-│   blog_posts     │
-│──────────────────│
-│ id (PK)          │
-│ title            │
-│ slug             │
-│ content          │
-│ post_type        │  -- weekly / monthly / spotlight
-│ cover_image_url  │
-│ published_at     │
-│ created_at       │
-│ updated_at       │
-└──────────────────┘
-```
-
-## 表设计
-
-### projects — 项目主表
-
-```sql
-CREATE TABLE projects (
-    id              BIGSERIAL PRIMARY KEY,
-    github_id       BIGINT NOT NULL UNIQUE,
-    full_name       VARCHAR(255) NOT NULL UNIQUE,  -- owner/repo
-    description     TEXT,
-    language        VARCHAR(50),
-    license         VARCHAR(50),
-    topics          TEXT[],                         -- PostgreSQL 数组类型
-    homepage        VARCHAR(500),
-    created_at_gh   TIMESTAMPTZ,                   -- GitHub 仓库创建时间
-    pushed_at       TIMESTAMPTZ,                   -- 最后推送时间
-    metadata        JSONB DEFAULT '{}',            -- 扩展字段（灵活存储）
-
-    -- 分析结果（由 Analyzer 更新）
-    score           NUMERIC(5,2) DEFAULT 0,        -- 热度评分 0-100
-    rank            INT,                           -- 当前排名
-
-    -- 系统字段
-    first_seen_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    is_archived     BOOLEAN DEFAULT FALSE,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
--- 索引
-CREATE INDEX idx_projects_score ON projects(score DESC);
-CREATE INDEX idx_projects_rank ON projects(rank ASC) WHERE rank IS NOT NULL;
-CREATE INDEX idx_projects_language ON projects(language);
-CREATE INDEX idx_projects_topics ON projects USING GIN(topics);
-CREATE INDEX idx_projects_metadata ON projects USING GIN(metadata);
-```
-
-### daily_snapshots — 每日快照
-
-```sql
-CREATE TABLE daily_snapshots (
-    id                BIGSERIAL PRIMARY KEY,
-    project_id        BIGINT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-    snapshot_date     DATE NOT NULL,
-
-    -- 指标快照
-    stargazers_count  INT NOT NULL DEFAULT 0,
-    forks_count       INT NOT NULL DEFAULT 0,
-    open_issues_count INT NOT NULL DEFAULT 0,
-    watchers_count    INT NOT NULL DEFAULT 0,
-
-    -- 分析结果
-    score             NUMERIC(5,2),
-    rank              INT,
-
-    created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-
-    UNIQUE(project_id, snapshot_date)
-);
-
--- 索引
-CREATE INDEX idx_snapshots_date ON daily_snapshots(snapshot_date DESC);
-CREATE INDEX idx_snapshots_project_date ON daily_snapshots(project_id, snapshot_date DESC);
-```
-
-### categories — 分类表
-
-```sql
-CREATE TABLE categories (
-    id          SERIAL PRIMARY KEY,
-    name        VARCHAR(100) NOT NULL,
-    slug        VARCHAR(100) NOT NULL UNIQUE,
-    parent_id   INT REFERENCES categories(id),
-    description TEXT,
-    sort_order  INT DEFAULT 0,
-    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
--- 初始分类（见种子数据文档）
-```
-
-### project_categories — 项目-分类关联（M:N）
-
-```sql
-CREATE TABLE project_categories (
-    project_id  BIGINT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-    category_id INT NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
-    confidence  NUMERIC(3,2) DEFAULT 1.0,  -- 分类置信度（自动分类时使用）
-    PRIMARY KEY (project_id, category_id)
-);
-```
-
-### blog_posts — 博客文章
-
-```sql
-CREATE TABLE blog_posts (
-    id              BIGSERIAL PRIMARY KEY,
-    title           VARCHAR(500) NOT NULL,
-    slug            VARCHAR(500) NOT NULL UNIQUE,
-    content         TEXT NOT NULL,                   -- Markdown 格式
-    post_type       VARCHAR(20) NOT NULL,            -- weekly / monthly / spotlight
-    cover_image_url VARCHAR(500),
-    published_at    TIMESTAMPTZ,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-CREATE INDEX idx_posts_type ON blog_posts(post_type);
-CREATE INDEX idx_posts_published ON blog_posts(published_at DESC);
-```
-
-## 数据库迁移
-
-使用 `golang-migrate/migrate` 管理 Schema 变更：
+## 目录结构
 
 ```
-migrations/
-├── 000001_create_projects.up.sql
-├── 000001_create_projects.down.sql
-├── 000002_create_daily_snapshots.up.sql
-├── 000002_create_daily_snapshots.down.sql
-├── 000003_create_categories.up.sql
-├── 000003_create_categories.down.sql
-├── 000004_create_blog_posts.up.sql
-├── 000004_create_blog_posts.down.sql
-└── ...
+data/
+├── projects/              # 每个 AI 项目一个 JSON 文件
+│   ├── langchain-ai__langchain.json
+│   ├── ollama__ollama.json
+│   └── ...
+├── snapshots/             # 每日快照 JSONL（追加式）
+│   ├── 2025-07-14.jsonl
+│   ├── 2025-07-15.jsonl
+│   └── ...
+├── rankings/              # 每日排行榜 JSON
+│   ├── 2025-07-14.json
+│   ├── 2025-07-15.json
+│   └── ...
+├── posts/                 # 博客文章 JSON
+│   ├── ai-weekly-2025-w29.json
+│   ├── spotlight-langchain-ai-langchain.json
+│   └── ...
+├── schemas/               # JSON Schema 定义
+│   ├── project.schema.json
+│   ├── snapshot.schema.json
+│   ├── ranking.schema.json
+│   └── post.schema.json
+├── categories.json        # 12 个 AI 分类 + 关键词映射
+└── meta.json              # 版本和元信息
 ```
 
-## 查询模式
+## 数据模型
 
-### 常用查询
+### Project JSON (data/projects/{owner}__{repo}.json)
 
-```sql
--- Top 100 排行榜
-SELECT p.*, array_agg(c.name) AS categories
-FROM projects p
-LEFT JOIN project_categories pc ON p.id = pc.project_id
-LEFT JOIN categories c ON pc.category_id = c.id
-WHERE p.rank IS NOT NULL AND p.rank <= 100
-GROUP BY p.id
-ORDER BY p.rank ASC;
+详细 Schema 见 `data/schemas/project.schema.json`。核心字段：
 
--- 项目趋势（最近 30 天）
-SELECT snapshot_date, stargazers_count, forks_count, score
-FROM daily_snapshots
-WHERE project_id = $1
-  AND snapshot_date >= CURRENT_DATE - INTERVAL '30 days'
-ORDER BY snapshot_date ASC;
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | string | `owner__repo` 格式 |
+| full_name | string | `owner/repo` 格式 |
+| description | string | 项目描述 |
+| language | string | 主要编程语言 |
+| stars / forks | integer | 基本指标 |
+| topics | string[] | GitHub topics |
+| trending | object | 每日/每周 Star 增长、Trending 排名 |
+| analysis | object | LLM 分析结果（status/summary/features/...） |
+| categories | string[] | AI 分类标签 |
+| score / rank | number | 评分和排名 |
 
--- Star 日增量（窗口函数）
-SELECT snapshot_date,
-       stargazers_count,
-       stargazers_count - LAG(stargazers_count) OVER (ORDER BY snapshot_date) AS daily_star_gain
-FROM daily_snapshots
-WHERE project_id = $1
-ORDER BY snapshot_date DESC
-LIMIT 30;
+### Snapshot JSONL (data/snapshots/{date}.jsonl)
+
+每行一个项目的当日快照：
+
+```jsonl
+{"project_id":"langchain-ai__langchain","date":"2025-07-15","stars":95234,"forks":15432,"open_issues":1234,"score":92.5,"rank":1,"daily_stars":523}
+{"project_id":"ollama__ollama","date":"2025-07-15","stars":88100,"forks":6200,"open_issues":890,"score":88.2,"rank":2,"daily_stars":412}
 ```
 
-## 数据保留策略
+### Ranking JSON (data/rankings/{date}.json)
 
-| 数据类型 | 保留策略 | 理由 |
-|----------|----------|------|
-| projects | 永久 | 主数据，量小 |
-| daily_snapshots | 永久（前期）| 年增 ~5 万条，PG 轻松承载 |
-| blog_posts | 永久 | 博客内容，量极小 |
+```json
+{
+  "date": "2025-07-15",
+  "total": 50,
+  "items": [
+    {"rank": 1, "project_id": "langchain-ai__langchain", "score": 92.5, "daily_stars": 523, "rank_change": 0},
+    {"rank": 2, "project_id": "ollama__ollama", "score": 88.2, "daily_stars": 412, "rank_change": 1}
+  ]
+}
+```
 
-> 如未来数据量增长，可考虑将超过 1 年的快照按周聚合。
+### Post JSON (data/posts/{slug}.json)
+
+```json
+{
+  "slug": "ai-weekly-2025-w29",
+  "title": "AI 开源周报 #29",
+  "content": "## 本周概览\n\n...",
+  "post_type": "weekly",
+  "published_at": "2025-07-20T06:00:00Z"
+}
+```
+
+## 文件命名规则
+
+| 类型 | 命名 | 示例 |
+|------|------|------|
+| Project | `{owner}__{repo}.json` | `langchain-ai__langchain.json` |
+| Snapshot | `{YYYY-MM-DD}.jsonl` | `2025-07-15.jsonl` |
+| Ranking | `{YYYY-MM-DD}.json` | `2025-07-15.json` |
+| Post | `{slug}.json` | `ai-weekly-2025-w29.json` |
+
+使用 `__` (双下划线) 分隔 owner 和 repo，因为 `/` 不能用于文件名。
+
+## 数据操作接口
+
+```go
+package datastore
+
+// Store 提供对 data/ 目录的读写操作
+type Store struct {
+    dataDir string
+    logger  *zap.Logger
+}
+
+func NewStore(dataDir string) *Store { ... }
+
+// Projects
+func (s *Store) LoadProject(id string) (*Project, error)
+func (s *Store) SaveProject(p *Project) error
+func (s *Store) ListProjects() ([]*Project, error)
+
+// Snapshots
+func (s *Store) AppendSnapshot(date string, snap *Snapshot) error
+func (s *Store) LoadSnapshots(date string) ([]*Snapshot, error)
+func (s *Store) LoadSnapshotRange(from, to string) ([]*Snapshot, error)
+
+// Rankings
+func (s *Store) SaveRanking(r *Ranking) error
+func (s *Store) LoadRanking(date string) (*Ranking, error)
+func (s *Store) LoadLatestRanking() (*Ranking, error)
+
+// Posts
+func (s *Store) SavePost(p *Post) error
+func (s *Store) LoadPost(slug string) (*Post, error)
+func (s *Store) ListPosts() ([]*Post, error)
+```
+
+## Git 同步
+
+Stage 1 完成所有数据写入后，执行 `tishi push`：
+
+```bash
+cd data/
+git add -A
+git commit -m "daily update $(date +%Y-%m-%d)"
+git push origin main
+```
+
+Stage 2 在构建前拉取最新数据：
+
+```bash
+cd data/
+git pull origin main
+```
+
+## 与 v0.x 对比
+
+| 维度 | v0.x (PostgreSQL) | v1.0 (JSON + Git) |
+|------|-------------------|-------------------|
+| 存储方式 | 4 张关系表 | JSON 文件目录 |
+| 查询方式 | SQL | Go file I/O + JSON unmarshal |
+| 同步方式 | 共享数据库连接 | Git push/pull |
+| 版本追溯 | 无（需手动备份） | Git 历史天然提供 |
+| 运维 | 需维护 PG 进程/备份/连接池 | 零运维 |
+| 可读性 | 需 SQL 客户端 | 直接查看 JSON 文件 |
+
+## 数据量估算
+
+| 数据 | 单文件大小 | 年累计文件数 | 年累计体积 |
+|------|-----------|-------------|-----------|
+| projects/ | ~5-10KB | ~2000 | ~20MB |
+| snapshots/ | ~10-30KB | 365 | ~10MB |
+| rankings/ | ~20KB | 365 | ~7MB |
+| posts/ | ~5KB | ~100 | ~0.5MB |
+| **合计** | | | **< 40MB/年** |
+
+Git 仓库完全承载无压力。
 
 ## 相关文档
 
-- [数据库 Schema](../data/schema.md) — 完整 DDL
+- [数据契约 Schema](../../data/schemas/) — JSON Schema 定义
 - [数据字典](../data/data-dictionary.md) — 字段详细说明
 - [数据流转](../architecture/data-flow.md) — 数据如何流入存储

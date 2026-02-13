@@ -4,14 +4,12 @@
 
 | 工具 | 版本 | 用途 |
 |------|------|------|
-| Go | ≥ 1.22 | 后端开发 |
+| Go | ≥ 1.23 | 后端 CLI 开发 |
 | Node.js | ≥ 20 LTS | Astro 前端构建 |
 | pnpm | ≥ 9.x | Node 包管理器 |
-| Docker | ≥ 24.x | 容器化运行 |
-| Docker Compose | v2 | 本地服务编排 |
-| PostgreSQL | ≥ 16 | 数据库（可用 Docker 启动） |
-| sqlc | ≥ 1.25 | SQL → Go 代码生成 |
-| golang-migrate | ≥ 4.x | 数据库迁移 |
+| Git | ≥ 2.x | 版本控制 + 数据同步 |
+
+> **v1.0 不再需要**：PostgreSQL、Docker（开发阶段）、sqlc、golang-migrate。
 
 ## 项目结构
 
@@ -21,52 +19,52 @@ tishi/
 │   └── tishi/
 │       └── main.go              # 入口，cobra CLI
 ├── internal/
-│   ├── collector/               # 数据采集模块
-│   │   ├── collector.go
-│   │   ├── github_client.go
-│   │   └── token_rotator.go
-│   ├── analyzer/                # 趋势分析模块
-│   │   ├── analyzer.go
+│   ├── cmd/                     # cobra 子命令
+│   │   ├── root.go
+│   │   ├── scrape.go            # v1.0 新增
+│   │   ├── analyze.go           # v1.0 新增（LLM 分析）
+│   │   ├── score.go             # v1.0 新增
+│   │   ├── generate.go
+│   │   ├── push.go              # v1.0 新增（git push）
+│   │   ├── review.go            # v1.0 新增（人工审核）
+│   │   └── version.go
+│   ├── scraper/                 # Trending 页面抓取（v1.0 新增）
+│   │   ├── scraper.go
+│   │   ├── filter.go
+│   │   └── enricher.go
+│   ├── llm/                     # LLM 中文分析（v1.0 新增）
+│   │   ├── client.go
+│   │   ├── prompt.go
+│   │   └── analyzer.go
+│   ├── scorer/                  # 热度评分（重构自 analyzer）
 │   │   └── scorer.go
-│   ├── content/                 # 内容生成模块
+│   ├── content/                 # 内容生成（周报/月报）
 │   │   ├── generator.go
 │   │   └── templates.go
-│   ├── server/                  # API Server
-│   │   ├── server.go
-│   │   ├── router.go
-│   │   ├── handlers/
-│   │   └── middleware/
-│   ├── scheduler/               # 定时调度
-│   │   └── scheduler.go
-│   ├── db/                      # 数据库访问层
-│   │   ├── sqlc/                # sqlc 生成的代码
-│   │   ├── queries/             # SQL 查询文件
-│   │   └── migrations/          # 数据库迁移文件
+│   ├── datastore/               # JSON 文件存储（v1.0 新增）
+│   │   └── store.go
 │   └── config/                  # 配置管理
 │       └── config.go
-├── web/                         # Astro 前端
+├── data/                        # JSON 数据文件（Git 管理）
+│   ├── projects/
+│   ├── snapshots/
+│   ├── rankings/
+│   ├── posts/
+│   ├── schemas/
+│   ├── categories.json
+│   └── meta.json
+├── web/                         # Astro 前端（纯 SSG）
 │   ├── astro.config.mjs
 │   ├── package.json
 │   ├── src/
-│   └── dist/
-├── templates/                   # Go 模板文件
-│   ├── weekly.md.tmpl
-│   ├── monthly.md.tmpl
-│   └── spotlight.md.tmpl
-├── deploy/                      # 部署配置
-│   ├── docker-compose.yml
-│   ├── Dockerfile
+│   └── dist/                    # 构建产物
+├── docs/                        # 项目文档
+├── deploy/
 │   └── nginx/
 │       └── nginx.conf
-├── docs/                        # 项目文档（当前目录）
-├── scripts/                     # 辅助脚本
-│   ├── setup.sh
-│   └── seed.sh
 ├── Makefile
 ├── go.mod
-├── go.sum
-├── .env.example
-├── .gitignore
+├── config.yaml.example
 └── README.md
 ```
 
@@ -82,34 +80,56 @@ cd tishi
 ### 2. 配置环境变量
 
 ```bash
-cp .env.example .env
-# 编辑 .env，配置 GitHub Token 和数据库密码
+cp config.yaml.example config.yaml
+# 编辑 config.yaml，配置 LLM API Key 和 GitHub Token
 ```
 
-### 3. 启动数据库
+最小配置：
 
-```bash
-# 使用 Docker 启动 PostgreSQL
-docker-compose up -d postgres
+```yaml
+llm:
+  provider: deepseek
+  api_key: "sk-xxx"     # 必填
 
-# 等待数据库就绪
-docker-compose exec postgres pg_isready -U tishi
+github:
+  tokens:
+    - "ghp_xxx"         # API enrichment 用
 ```
 
-### 4. 执行数据库迁移
+### 3. 检查数据目录
 
 ```bash
-make migrate-up
+# data/ 目录已包含在仓库中
+ls data/
+# categories.json  meta.json  posts/  projects/  rankings/  schemas/  snapshots/
 ```
 
-### 5. 启动后端服务
+### 4. 构建后端
 
 ```bash
-# 开发模式（热重载，需要 air）
-make dev
+make build
+# 或
+go build -o bin/tishi ./cmd/tishi
+```
 
-# 或直接运行
-go run ./cmd/tishi server
+### 5. 手动测试 Pipeline
+
+```bash
+# 1. 抓取 Trending + 过滤 AI 项目 + API enrichment
+./bin/tishi scrape
+
+# 2. LLM 中文分析（对新项目生成分析报告）
+./bin/tishi analyze
+
+# 3. 评分排名
+./bin/tishi score
+
+# 4. 生成周报
+./bin/tishi generate --type weekly
+
+# 5. 查看数据
+ls data/projects/
+cat data/rankings/$(date +%Y-%m-%d).json | jq .
 ```
 
 ### 6. 启动前端开发服务器
@@ -118,34 +138,34 @@ go run ./cmd/tishi server
 cd web
 pnpm install
 pnpm dev
+# 访问 http://localhost:4321
 ```
 
-### 7. 手动测试采集
+### 7. 构建前端静态站点
 
 ```bash
-# 手动触发一次数据采集
-go run ./cmd/tishi collect
-
-# 手动触发一次趋势分析
-go run ./cmd/tishi analyze
+cd web
+pnpm build
+# 产物在 web/dist/
 ```
 
 ## Makefile 命令
 
 ```makefile
 # 构建
-make build          # 构建 Go 二进制
-make build-web      # 构建 Astro 前端
+make build          # 构建 Go CLI 二进制
+make build-web      # 构建 Astro SSG 前端
 
 # 开发
-make dev            # 启动开发模式（air 热重载）
 make dev-web        # 启动前端开发服务器
 
-# 数据库
-make migrate-up     # 执行迁移
-make migrate-down   # 回滚迁移
-make migrate-create # 创建新迁移文件
-make sqlc           # 重新生成 sqlc 代码
+# Pipeline 命令
+make scrape         # 抓取 Trending
+make analyze        # LLM 分析
+make score          # 评分排名
+make generate       # 生成内容
+make push           # Git push 数据
+make pipeline       # 运行完整 pipeline
 
 # 测试
 make test           # 运行单元测试
@@ -156,27 +176,17 @@ make test-cover     # 生成覆盖率报告
 make lint           # 运行 golangci-lint
 make fmt            # 格式化代码
 
-# Docker
-make docker-build   # 构建 Docker 镜像
-make docker-up      # 启动所有服务
-make docker-down    # 停止所有服务
-make docker-logs    # 查看日志
-
-# 手动操作
-make collect        # 手动采集
-make analyze        # 手动分析
-make generate-weekly  # 手动生成周报
+# Docker（仅 Nginx 部署用）
+make docker-build   # 构建 Nginx 镜像
 ```
 
 ## 开发工具推荐
 
 | 工具 | 用途 |
 |------|------|
-| [air](https://github.com/cosmtrek/air) | Go 热重载 |
 | [golangci-lint](https://golangci-lint.run/) | Go 代码检查 |
-| [sqlc](https://sqlc.dev/) | SQL → Go 代码生成 |
-| [pgAdmin](https://www.pgadmin.org/) | PostgreSQL GUI |
-| [httpie](https://httpie.io/) | API 测试 |
+| [jq](https://jqlang.github.io/jq/) | JSON 数据查看/调试 |
+| [httpie](https://httpie.io/) | GitHub API 测试 |
 
 ## 相关文档
 

@@ -1,171 +1,61 @@
 # API 服务模块设计（API Server）
 
-## 概述
+> **⚠️ v1.0 已废弃** — API Server 在 v1.0 架构中不再需要。Astro SSG 构建时直接读取 `data/*.json` 文件，无需 HTTP API。本文档保留作为历史参考。
 
-API Server 是 tishi 后端的 HTTP 服务，基于 Go + chi 路由，为 Astro 前端构建时提供数据。
+## v0.x 架构（已废弃）
 
-## 架构
+API Server 基于 Go + chi 路由，为 Astro 前端构建时提供 JSON 数据。
+
+### 路由
 
 ```
-HTTP Request
-     │
-     ▼
-┌─────────────────────────┐
-│     Middleware Chain     │
-│  Logger → Recovery →    │
-│  CORS → RateLimit       │
-└────────────┬────────────┘
-             │
-             ▼
-┌─────────────────────────┐
-│       chi Router        │
-│                         │
-│  /api/v1/rankings       │
-│  /api/v1/projects       │
-│  /api/v1/projects/:id   │
-│  /api/v1/posts          │
-│  /api/v1/categories     │
-│  /healthz               │
-└────────────┬────────────┘
-             │
-             ▼
-┌─────────────────────────┐
-│       Handlers          │
-│  (请求校验 + 业务逻辑)    │
-└────────────┬────────────┘
-             │
-             ▼
-┌─────────────────────────┐
-│    Repository Layer      │
-│  (sqlc generated code)   │
-└────────────┬────────────┘
-             │
-             ▼
-        PostgreSQL
+GET /api/v1/rankings        — Top 100 排行榜
+GET /api/v1/projects        — 项目列表
+GET /api/v1/projects/:id    — 项目详情
+GET /api/v1/posts           — 博客文章列表
+GET /api/v1/categories      — 分类列表
+GET /healthz                — 健康检查
 ```
 
-## 路由定义
+## v1.0 替代方案
 
-详细接口规范见 [RESTful API](../api/restful-api.md)。
+前端数据获取方式从 HTTP API 改为直接文件读取：
 
-```go
-func NewRouter(h *Handlers) chi.Router {
-    r := chi.NewRouter()
+| v0.x | v1.0 |
+|------|------|
+| `fetch('/api/v1/rankings')` | `import rankings from 'data/rankings/latest.json'` |
+| `fetch('/api/v1/projects/:id')` | `import project from 'data/projects/{id}.json'` |
+| `fetch('/api/v1/posts')` | Glob `data/posts/*.json` |
 
-    // 全局中间件
-    r.Use(middleware.Logger)
-    r.Use(middleware.Recoverer)
-    r.Use(middleware.RealIP)
-    r.Use(cors.Handler(cors.Options{
-        AllowedOrigins: []string{"*"},
-        AllowedMethods: []string{"GET"},
-    }))
+### Astro 数据加载示例
 
-    // 健康检查
-    r.Get("/healthz", h.Healthz)
+```typescript
+// web/src/lib/data.ts
+import fs from 'fs';
+import path from 'path';
 
-    // API v1
-    r.Route("/api/v1", func(r chi.Router) {
-        r.Use(middleware.Throttle(100)) // 并发限制
+const DATA_DIR = path.resolve('../data');
 
-        r.Get("/rankings", h.GetRankings)
-        r.Get("/projects", h.ListProjects)
-        r.Get("/projects/{id}", h.GetProject)
-        r.Get("/projects/{id}/trends", h.GetProjectTrends)
-        r.Get("/posts", h.ListPosts)
-        r.Get("/posts/{slug}", h.GetPost)
-        r.Get("/categories", h.ListCategories)
-    })
+export function getLatestRanking() {
+  const files = fs.readdirSync(path.join(DATA_DIR, 'rankings'))
+    .filter(f => f.endsWith('.json'))
+    .sort()
+    .reverse();
+  const content = fs.readFileSync(path.join(DATA_DIR, 'rankings', files[0]), 'utf-8');
+  return JSON.parse(content);
+}
 
-    return r
+export function getProject(id: string) {
+  const content = fs.readFileSync(path.join(DATA_DIR, 'projects', `${id}.json`), 'utf-8');
+  return JSON.parse(content);
 }
 ```
 
-## 中间件
+## Phase 4 清理计划
 
-| 中间件 | 功能 |
-|--------|------|
-| Logger | 请求日志（zap structured logging） |
-| Recoverer | panic 恢复，返回 500 |
-| RealIP | 从 X-Forwarded-For 获取真实 IP |
-| CORS | 跨域支持（Astro 开发模式需要） |
-| Throttle | 并发请求限制 |
+在 Phase 4 代码清理阶段，将移除以下文件：
 
-## 响应格式
-
-统一 JSON 响应格式：
-
-```json
-// 成功响应
-{
-    "data": { ... },
-    "meta": {
-        "total": 100,
-        "page": 1,
-        "per_page": 20
-    }
-}
-
-// 错误响应
-{
-    "error": {
-        "code": "NOT_FOUND",
-        "message": "Project not found"
-    }
-}
-```
-
-## 分页
-
-使用 offset-based 分页（数据量小，无需 cursor-based）：
-
-```
-GET /api/v1/projects?page=1&per_page=20
-```
-
-默认 `per_page=20`，最大 `per_page=100`。
-
-## 缓存策略
-
-| 端点 | Cache-Control | 理由 |
-|------|---------------|------|
-| `/api/v1/rankings` | `max-age=3600` | 每日更新一次，1小时缓存足够 |
-| `/api/v1/projects/:id` | `max-age=3600` | 同上 |
-| `/api/v1/projects/:id/trends` | `max-age=3600` | 同上 |
-| `/api/v1/posts` | `max-age=86400` | 文章更新频率更低 |
-| `/healthz` | `no-cache` | 实时状态 |
-
-> 主要缓存依赖 Nginx 层的 proxy_cache，Go 应用层设置 HTTP 缓存头。
-
-## 错误处理
-
-```go
-type AppError struct {
-    Code    string `json:"code"`
-    Message string `json:"message"`
-    Status  int    `json:"-"`
-}
-
-var (
-    ErrNotFound     = &AppError{Code: "NOT_FOUND", Message: "Resource not found", Status: 404}
-    ErrBadRequest   = &AppError{Code: "BAD_REQUEST", Message: "Invalid request", Status: 400}
-    ErrInternal     = &AppError{Code: "INTERNAL", Message: "Internal server error", Status: 500}
-)
-```
-
-## 配置
-
-```yaml
-server:
-  host: "0.0.0.0"
-  port: 8080
-  read_timeout: 10s
-  write_timeout: 30s
-  idle_timeout: 60s
-  max_request_body: 1MB
-```
-
-## 相关文档
-
-- [RESTful API](../api/restful-api.md) — 接口详细定义
-- [部署拓扑](../architecture/deployment-topology.md) — Nginx 反向代理配置
+- `internal/server/` — 整个 API Server 包
+- `internal/cmd/server.go` — server 子命令
+- `go-chi/chi` 依赖
+- `prometheus/client_golang` 依赖

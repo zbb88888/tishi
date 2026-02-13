@@ -2,144 +2,157 @@
 
 ## 概述
 
-tishi 的数据从 GitHub API 采集，经过清洗、存储、分析、生成，最终以静态页面形式展示给用户。本文档描述完整的数据流转链路。
+tishi v1.0 的数据从 GitHub Trending 爬取，经 AI 过滤、LLM 分析、评分排名，最终以 JSON 文件输出到 `data/` 目录。Stage 2 读取 JSON 生成静态页面。全链路无数据库。
 
 ## 全链路数据流
 
 ```
-                    ┌─── 每日 00:00 UTC ───┐
-                    │                       │
-                    ▼                       │
-┌──────────┐   ┌──────────┐   ┌─────────────────┐
-│ GitHub   │──▶│Collector │──▶│   PostgreSQL    │
-│ Search   │   │          │   │                 │
-│ API      │   │ 1.搜索    │   │ projects 表     │
-│          │   │ 2.过滤    │   │ daily_snapshots │
-│ GraphQL  │   │ 3.清洗    │   │                 │
-│ API      │   │ 4.写入    │   └────────┬────────┘
-└──────────┘   └──────────┘            │
-                                        │ 采集完成后触发
-                                        ▼
-                               ┌──────────────┐
-                               │   Analyzer   │
-                               │              │
-                               │ 1.计算热度评分 │
-                               │ 2.排名变动检测 │
-                               │ 3.趋势异常检测 │
-                               │ 4.分类打标     │
-                               │ 5.写回数据库   │
-                               └──────┬───────┘
-                                      │
-                          ┌───────────┴───────────┐
-                          │ 周日/月末触发           │ 实时可用
-                          ▼                       ▼
-                 ┌────────────────┐     ┌──────────────┐
-                 │Content Generator│    │  API Server   │
-                 │                │     │              │
-                 │ 1.查询本周数据   │     │ JSON API     │
-                 │ 2.渲染模板      │     │ 供 Astro     │
-                 │ 3.生成 Markdown │     │ 构建时消费    │
-                 │ 4.存入 DB/文件  │     └──────┬───────┘
-                 └────────────────┘            │
-                                               │ Astro build
-                                               ▼
-                                     ┌──────────────────┐
-                                     │  Astro SSG 构建   │
-                                     │                  │
-                                     │ 1.调用 API 获取数据│
-                                     │ 2.生成静态 HTML   │
-                                     │ 3.输出 dist/      │
-                                     └────────┬─────────┘
-                                              │
-                                              ▼
-                                     ┌──────────────────┐
-                                     │  Nginx / CDN     │
-                                     │  静态文件托管      │
-                                     │  用户浏览器访问    │
-                                     └──────────────────┘
+           Stage 1: 采集+分析 (Machine A)
+           ═══════════════════════════════
+
+  ┌────────────────────┐
+  │ GitHub Trending    │  HTTP GET https://github.com/trending
+  │ HTML 页面          │
+  └────────┬───────────┘
+           │ Colly 爬取
+           ▼
+  ┌────────────────────┐
+  │ 候选项目列表        │  article.Box-row 解析
+  │ (repo, desc, lang, │  ~25 项/页 × 3 语种
+  │  stars, period_stars)│
+  └────────┬───────────┘
+           │ AI 关键词过滤 (categories.json)
+           ▼
+  ┌────────────────────┐
+  │ AI 项目列表         │  过滤掉非 AI 项目
+  └────────┬───────────┘
+           │ GitHub API 补充 (README + 详细指标)
+           ▼
+  ┌────────────────────┐
+  │ 完整项目数据        │  owner, description, stars, forks,
+  │                    │  open_issues, readme_content, topics[]
+  └────────┬───────────┘
+           │ LLM 中文分析 (DeepSeek / Qwen)
+           ▼
+  ┌────────────────────┐
+  │ 项目 + analysis    │  summary, positioning, features[],
+  │                    │  advantages, tech_stack, use_cases,
+  │                    │  comparison[], ecosystem
+  └────────┬───────────┘
+           │ 评分 + 排名 + 快照
+           ▼
+  ┌────────────────────┐
+  │ data/ 目录输出      │
+  │  projects/*.json   │  每个 AI 项目一个文件
+  │  snapshots/*.jsonl │  当日快照 (追加)
+  │  rankings/*.json   │  当日排行
+  │  posts/*.json      │  博客文章
+  └────────┬───────────┘
+           │ git push
+           ▼
+           Stage 2: SSG 构建 (Machine B)
+           ═══════════════════════════════
+
+  ┌────────────────────┐
+  │ git pull data/     │
+  └────────┬───────────┘
+           │ Astro SSG build
+           ▼
+  ┌────────────────────┐
+  │ dist/ 静态 HTML    │  首页排行榜 / 项目详情 / 分类页 / 博客
+  └────────┬───────────┘
+           │ rsync / scp
+           ▼
+           Stage 3: 发布 (Machine C)
+           ═══════════════════════════════
+
+  ┌────────────────────┐
+  │ Nginx / CDN        │  serve dist/
+  │ 用户浏览器访问       │
+  └────────────────────┘
 ```
 
 ## 阶段详解
 
-### 阶段 1：数据采集（Collector）
+### 阶段 1a：Trending 爬取 (Scraper)
 
-**触发**：Scheduler 每日 00:00 UTC
+**触发**：`tishi scrape` CLI 命令（外部 cron 每日调度）
 
-**输入**：AI 领域关键词库（见 [种子数据](../data/seed-data.md)）
-
-**处理流程**：
-
-1. 使用 GitHub Search API 按关键词搜索项目
-2. 按 Star 数排序，取 Top N（N > 100 以备去重后仍够 100）
-3. 对每个项目调用 GraphQL API 获取详细信息：
-   - 基本信息（name, description, language, license, created_at）
-   - 指标数据（stargazers_count, forks_count, open_issues_count, watchers_count）
-   - 最近活跃度（last_push, last_commit, contributor_count）
-4. 数据清洗：去重、字段校验、异常值过滤
-5. Upsert 到 `projects` 表，Insert 到 `daily_snapshots` 表
-
-**输出**：PostgreSQL 中更新的项目数据 + 当日快照
-
-### 阶段 2：趋势分析（Analyzer）
-
-**触发**：Collector 完成后由 Scheduler 串行触发
-
-**输入**：`projects` + `daily_snapshots` 表数据
+**输入**：GitHub Trending 页面 URL
 
 **处理流程**：
 
-1. **热度评分计算**：
-   - 日增 Star × 权重 + 周增 Star × 权重 + Fork 率 × 权重 + Issue 响应速度 × 权重
-   - 输出标准化评分 0-100
-2. **排名计算**：按评分排序，生成 Top 100 排行榜
-3. **变动检测**：与前一日排名对比，标记 ↑↓ 变动幅度
-4. **异常检测**：识别 Star 单日暴涨（>200%均值）的项目
-5. **分类打标**：基于关键词 + README 内容，映射到预定义分类树
+1. Colly 请求 `https://github.com/trending?since=daily` (可选 weekly)
+2. CSS 选择器 `article.Box-row` 提取：repo full_name, description, language, stars_total, period_stars
+3. 读取 `data/categories.json` 关键词映射，按 12 类 AI 关键词过滤
+4. 对通过过滤的项目，调用 GitHub REST API 补充：README 内容、topics、forks、issues 等
+5. Merge 到 `data/projects/{owner}__{repo}.json`（存在则更新 trending 字段，不存在则新建）
+6. Append 到 `data/snapshots/{YYYY-MM-DD}.jsonl`
 
-**输出**：更新 `projects.score`, `projects.rank`, `project_categories` 关联
+**输出**：projects/*.json + snapshots/*.jsonl
 
-### 阶段 3：内容生成（Content Generator）
+### 阶段 1b：LLM 分析 (Analyzer)
 
-**触发**：周日 06:00 UTC（周报）、每月 1 日 06:00 UTC（月报）
+**触发**：`tishi analyze` CLI 命令
 
-**输入**：分析后的项目数据 + 历史快照
+**输入**：`data/projects/*.json` 中 `analysis.status == "draft"` 或未分析的项目
 
 **处理流程**：
 
-1. 查询时间范围内的排名变动、新入榜项目、Star 增长最快项目
-2. 套用 Markdown 模板生成文章
-3. 插入图表占位符（前端渲染时替换）
-4. 存入 `blog_posts` 表
+1. 遍历 projects/ 目录，筛选需要分析的项目
+2. 构建 Prompt：项目名 + description + README 前 3000 字 + topics
+3. 调用 LLM API (OpenAI-compatible)，模型 deepseek-chat 或 qwen-plus
+4. 解析返回的 JSON：summary, positioning, features[], advantages, tech_stack, use_cases, comparison[], ecosystem
+5. 写入项目 JSON 的 `analysis` 字段，status 设为 `"draft"`（需人工 review 后改为 `"published"`）
+6. 记录 token_usage 用于成本监控
 
-**输出**：Markdown 格式的博客文章记录
+**输出**：更新 projects/*.json 的 analysis 字段
 
-### 阶段 4：API 服务 + 前端构建
+### 阶段 1c：评分排名 (Scorer)
 
-**API Server** 提供以下核心数据端点（详见 [RESTful API](../api/restful-api.md)）：
+**触发**：`tishi score` CLI 命令
 
-- `GET /api/v1/rankings` — 当前 Top 100 排行榜
-- `GET /api/v1/projects/:id` — 项目详情
-- `GET /api/v1/projects/:id/trends` — 项目趋势数据（时序）
-- `GET /api/v1/posts` — 博客文章列表
+**输入**：projects/*.json + snapshots/*.jsonl
 
-**Astro SSG** 在构建时调用上述 API，生成静态 HTML 页面。
+**处理流程**：
+
+1. 读取所有项目 JSON + 最近 7 日快照
+2. 多维加权评分：daily_stars × 0.4 + weekly_stars × 0.3 + forks_rate × 0.15 + issues_activity × 0.15
+3. 按评分排序，生成 Top N 排行榜
+4. 与前一日排名对比，计算 rank_change
+
+**输出**：`data/rankings/{YYYY-MM-DD}.json`
+
+### 阶段 2：Astro SSG 构建
+
+**触发**：`npm run build`（Machine B 的 cron 或 CI）
+
+**输入**：`data/` 目录全部 JSON 文件
+
+**处理流程**：
+
+1. Astro 构建脚本读取 data/projects/*.json、data/rankings/latest.json、data/posts/*.json
+2. 生成静态 HTML：首页排行榜、项目详情页、分类浏览页、博客列表页、博客详情页
+3. 输出到 dist/
+
+**输出**：dist/ 目录下的静态 HTML/CSS/JS
 
 ## 数据时效性
 
-| 数据类型 | 更新频率 | 延迟 |
+| 数据类型 | 更新频率 | 来源 |
 |----------|----------|------|
-| 项目基本信息 | 每日 | < 1小时（采集耗时） |
-| 排行榜 | 每日 | 采集 + 分析完成后 |
-| 趋势图表 | 每日 | 同上 |
-| 周报博客 | 每周日 | 固定时间生成 |
-| 静态页面 | 每日 | 需触发 Astro rebuild |
+| Trending 项目数据 | 每日 | GitHub Trending HTML |
+| LLM 分析报告 | 新项目/定期更新 | DeepSeek / Qwen API |
+| 排行榜 | 每日 | 评分计算 |
+| 静态页面 | 每日 | Astro SSG rebuild |
 
 ## 数据量估算
 
-| 数据 | 日增 | 年增 | 5年累计 |
-|------|------|------|---------|
-| projects 记录 | ~0（缓慢增长） | ~200 | ~1,000 |
-| daily_snapshots | 100-200 | 36,500-73,000 | ~365,000 |
-| blog_posts | ~0.3（周报+月报） | ~64 | ~320 |
+| 数据 | 单文件大小 | 日增 | 年累计 |
+|------|-----------|------|--------|
+| project JSON | ~5KB | ~5-20 个新项目 | ~2000 个文件 |
+| snapshot JSONL | ~10KB/日 | 1 个文件 | 365 个文件 |
+| ranking JSON | ~20KB | 1 个文件 | 365 个文件 |
+| post JSON | ~5KB | ~0.3 个 | ~100 个文件 |
 
-**结论**：数据量极小，单 PostgreSQL 实例轻松承载，无需分库分表或时序数据库。
+**结论**：全部数据 < 100MB/年，Git 仓库轻松承载。

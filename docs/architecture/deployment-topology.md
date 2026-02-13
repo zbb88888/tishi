@@ -2,179 +2,142 @@
 
 ## 概述
 
-tishi 采用单机 Docker Compose 部署，包含 3 个容器：Go 应用、PostgreSQL、Nginx。
+tishi v1.0 采用三机解耦部署，每个 Stage 独立运行在不同机器上，通过 Git 仓库交换数据。
 
 ## 拓扑图
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                      宿主机 (Linux)                          │
-│                                                             │
-│  ┌───────────────── Docker Compose ───────────────────────┐ │
-│  │                                                         │ │
-│  │  ┌─────────────┐  ┌──────────────┐  ┌──────────────┐  │ │
-│  │  │   Nginx     │  │  tishi       │  │ PostgreSQL   │  │ │
-│  │  │             │  │  (Go binary) │  │              │  │ │
-│  │  │  :80/:443   │  │              │  │  :5432       │  │ │
-│  │  │             │  │  API Server  │  │              │  │ │
-│  │  │  静态文件    │──▶│  :8080      │──▶│  tishi_db   │  │ │
-│  │  │  /dist/*   │  │              │  │              │  │ │
-│  │  │             │  │  Scheduler   │  │  data volume │  │ │
-│  │  │  反向代理    │  │  Collector   │  │              │  │ │
-│  │  │  /api/* ───▶│  │  Analyzer    │  │              │  │ │
-│  │  │             │  │  Generator   │  │              │  │ │
-│  │  └─────────────┘  └──────────────┘  └──────────────┘  │ │
-│  │        │                                                │ │
-│  │        │ 端口映射                                        │ │
-│  └────────┼────────────────────────────────────────────────┘ │
-│           │                                                   │
-│      :80/:443 ◀──── 用户浏览器                                 │
-└───────────────────────────────────────────────────────────────┘
+┌───────────────────────────────────────────────────────────────────────────────────────┐
+│                              tishi v1.0 部署拓扑                                       │
+│                                                                                       │
+│  Machine A (采集+分析)          Machine B (SSG 构建)          Machine C (发布)           │
+│  ┌───────────────────┐        ┌───────────────────┐        ┌───────────────────┐      │
+│  │ cron (每日触发)     │        │ cron (每日触发)     │        │                   │      │
+│  │       ↓            │        │       ↓            │        │    Nginx          │      │
+│  │ tishi scrape       │        │  git pull data/    │        │    :80/:443       │      │
+│  │       ↓            │        │       ↓            │        │       ↓           │      │
+│  │ tishi analyze      │        │  npm run build     │        │   serve dist/     │      │
+│  │       ↓            │  Git   │       ↓            │ rsync  │                   │      │
+│  │ tishi score        │ ─────→ │  dist/ 输出        │ ─────→ │   用户浏览器访问    │      │
+│  │       ↓            │ push   │                   │        │                   │      │
+│  │ tishi generate     │        └───────────────────┘        └───────────────────┘      │
+│  │       ↓            │                                                                │
+│  │ tishi push         │                                                                │
+│  │  (git push data/)  │                                                                │
+│  └───────────────────┘                                                                │
+│                                                                                       │
+│  ❶ 仅需 Go runtime     ❷ 仅需 Node.js + Git         ❸ 仅需 Nginx                      │
+│     + GitHub Token        + npm                         + 静态文件                      │
+│     + LLM API Key                                                                     │
+└───────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## 容器定义
+## Machine A: 采集+分析
 
-### tishi（Go 应用）
+**需求**：Go 1.23+, Git, 网络（访问 GitHub + LLM API）
 
-```dockerfile
-FROM golang:1.22-alpine AS builder
-WORKDIR /app
-COPY . .
-RUN CGO_ENABLED=0 go build -o /tishi ./cmd/tishi
+**运行内容**：
 
-FROM gcr.io/distroless/static-debian12
-COPY --from=builder /tishi /tishi
-ENTRYPOINT ["/tishi", "server"]
+- `tishi` Go 二进制 (单文件，~15MB)
+- cron job 每日触发完整 pipeline
+
+**环境变量**：
+
+```bash
+TISHI_GITHUB_TOKENS=ghp_xxx,ghp_yyy    # GitHub Token (支持多个轮换)
+TISHI_LLM_PROVIDER=deepseek             # deepseek 或 qwen
+TISHI_LLM_API_KEY=sk-xxx               # LLM API Key
+TISHI_DATA_DIR=./data                   # 数据目录 (Git 仓库)
 ```
 
-- **端口**：8080（内部，不对外暴露）
-- **功能**：API Server + Scheduler（内置 Collector/Analyzer/Generator）
-- **健康检查**：`GET /healthz`
-- **环境变量**：数据库连接、GitHub Token 等
+**Cron 配置**：
 
-### PostgreSQL
+```cron
+# 每日 UTC 00:00 运行完整 pipeline
+0 0 * * * cd /opt/tishi && ./tishi scrape && ./tishi analyze && ./tishi score && ./tishi generate && ./tishi push
+```
 
-- **镜像**：`postgres:16-alpine`
-- **端口**：5432（内部网络，不对外暴露）
-- **数据持久化**：Docker Volume `pg_data`
-- **初始化**：通过 `tishi migrate` 命令执行 DDL
+## Machine B: SSG 构建
 
-### Nginx
+**需求**：Node.js 20+, npm, Git
 
-- **镜像**：`nginx:1.25-alpine`
-- **端口**：80/443（对外暴露）
-- **职责**：
-  - 托管 Astro 构建产物（`/dist/*`）
-  - 反向代理 API 请求（`/api/*` → `tishi:8080`）
-  - HTTPS 终止（Let's Encrypt）
-  - Gzip 压缩
-  - 静态资源缓存头
+**运行内容**：
 
-## Docker Compose 配置
+- Astro SSG 项目 (web/ 目录)
+- cron job 每日 git pull + build
+
+**Cron 配置**：
+
+```cron
+# 每日 UTC 01:00 (给 Stage 1 一小时完成)
+0 1 * * * cd /opt/tishi && git pull && cd web && npm run build && rsync -avz dist/ machineC:/var/www/tishi/
+```
+
+## Machine C: 发布
+
+**需求**：Nginx
+
+**Nginx 配置**：
+
+```nginx
+server {
+    listen 80;
+    server_name tishi.example.com;
+    root /var/www/tishi;
+    index index.html;
+
+    location / {
+        try_files $uri $uri/ /404.html;
+    }
+
+    # 静态资源长缓存
+    location ~* \.(js|css|png|jpg|svg|woff2)$ {
+        expires 30d;
+        add_header Cache-Control "public, immutable";
+    }
+
+    gzip on;
+    gzip_types text/html text/css application/javascript application/json;
+}
+```
+
+## 单机部署简化方案
+
+如果三台机器的资源不可用，可以在单机上运行全部 Stage：
+
+```bash
+# 单机一键 pipeline
+cd /opt/tishi
+./tishi scrape && ./tishi analyze && ./tishi score && ./tishi generate
+cd web && npm run build
+# Nginx 直接 serve web/dist/
+```
+
+Docker Compose 仅包含 Nginx：
 
 ```yaml
-# docker-compose.yml
 version: "3.9"
-
 services:
-  tishi:
-    build: .
-    restart: unless-stopped
-    depends_on:
-      postgres:
-        condition: service_healthy
-    environment:
-      - DATABASE_URL=postgres://tishi:${DB_PASSWORD}@postgres:5432/tishi_db?sslmode=disable
-      - GITHUB_TOKENS=${GITHUB_TOKENS}
-      - TZ=UTC
-    healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/healthz"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-    networks:
-      - tishi-net
-
-  postgres:
-    image: postgres:16-alpine
-    restart: unless-stopped
-    environment:
-      - POSTGRES_DB=tishi_db
-      - POSTGRES_USER=tishi
-      - POSTGRES_PASSWORD=${DB_PASSWORD}
-    volumes:
-      - pg_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U tishi -d tishi_db"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    networks:
-      - tishi-net
-
   nginx:
     image: nginx:1.25-alpine
-    restart: unless-stopped
     ports:
       - "80:80"
-      - "443:443"
     volumes:
       - ./web/dist:/usr/share/nginx/html:ro
       - ./deploy/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./deploy/nginx/certs:/etc/nginx/certs:ro
-    depends_on:
-      - tishi
-    networks:
-      - tishi-net
-
-networks:
-  tishi-net:
-    driver: bridge
-
-volumes:
-  pg_data:
 ```
 
-## 网络架构
+不再需要 PostgreSQL 和 Go 常驻服务容器。
 
-```
-互联网
-  │
-  ▼
-Nginx (:80/:443)
-  │
-  ├── /api/*  ───▶  tishi:8080  ───▶  postgres:5432
-  │
-  └── /*      ───▶  /usr/share/nginx/html (静态文件)
-```
+## 与 v0.x 架构对比
 
-- 所有容器在同一 Docker bridge 网络 `tishi-net` 内
-- 仅 Nginx 对外暴露端口
-- PostgreSQL 和 tishi 不直接对外
-
-## 前端构建 & 部署流程
-
-```bash
-# 1. 构建 Astro 静态站点（在 CI 或本地执行）
-cd web && npm run build
-
-# 2. 构建产物在 web/dist/，Nginx 挂载此目录
-
-# 3. 如需更新前端，重新构建后 Nginx 自动生效（volume 挂载）
-```
-
-## 备份策略
-
-```bash
-# PostgreSQL 数据备份（建议每日 cron）
-docker-compose exec postgres pg_dump -U tishi tishi_db | gzip > backup_$(date +%Y%m%d).sql.gz
-```
-
-## 监控 & 日志
-
-- **应用日志**：`docker-compose logs -f tishi`
-- **健康检查**：Docker 内置 healthcheck，异常自动重启
-- **未来扩展**：可接入 Prometheus（Go 应用暴露 `/metrics`）+ Grafana
+| 维度 | v0.x | v1.0 |
+|------|------|------|
+| 容器数 | 3 (Go + PG + Nginx) | 1 (仅 Nginx) |
+| 数据库 | PostgreSQL 常驻 | 无 (JSON 文件) |
+| Go 进程 | 常驻 (API Server + Scheduler) | 按需运行 (CLI) |
+| 数据同步 | PG 共享访问 | Git push/pull |
+| 耦合度 | 所有模块依赖同一 PG | 三阶段完全独立 |
 
 ## 相关文档
 

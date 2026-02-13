@@ -1,0 +1,63 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "$id": "https://tishi.dev/schemas/snapshot.schema.json",
+    "title": "Tishi Daily Snapshot",
+    "description": "每日指标快照（JSONL 格式，每行一条记录）",
+    "type": "object",
+    "required": [
+        "date",
+        "stars",
+        "forks"
+    ],
+    "properties": {
+        "date": {
+            "type": "string",
+            "format": "date",
+            "description": "快照日期 (YYYY-MM-DD)"
+        },
+        "stars": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "当日 Star 总数"
+        },
+        "forks": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "当日 Fork 总数"
+        },
+        "open_issues": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "当日 Open Issue 数"
+        },
+        "watchers": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "当日 Watcher 数"
+        },
+        "score": {
+            "type": [
+                "number",
+                "null"
+            ],
+            "minimum": 0,
+            "maximum": 100,
+            "description": "当日热度评分"
+        },
+        "rank": {
+            "type": [
+                "integer",
+                "null"
+            ],
+            "minimum": 1,
+            "description": "当日排名"
+        },
+        "daily_stars": {
+            "type": [
+                "integer",
+                "null"
+            ],
+            "description": "当日 Star 增量（来自 Trending 页面或与前日 diff）"
+        }
+    }
+}

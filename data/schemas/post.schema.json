@@ -1,0 +1,65 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "$id": "https://tishi.dev/schemas/post.schema.json",
+    "title": "Tishi Blog Post",
+    "description": "博客文章（周报/月报/新项目速递）",
+    "type": "object",
+    "required": [
+        "slug",
+        "title",
+        "content",
+        "post_type",
+        "created_at"
+    ],
+    "properties": {
+        "slug": {
+            "type": "string",
+            "description": "URL 路径标识（如 ai-weekly-2026-w07）"
+        },
+        "title": {
+            "type": "string",
+            "description": "文章标题"
+        },
+        "content": {
+            "type": "string",
+            "description": "Markdown 格式文章内容"
+        },
+        "post_type": {
+            "type": "string",
+            "enum": [
+                "weekly",
+                "monthly",
+                "spotlight"
+            ],
+            "description": "文章类型"
+        },
+        "cover_image_url": {
+            "type": [
+                "string",
+                "null"
+            ],
+            "description": "封面图片 URL"
+        },
+        "published_at": {
+            "type": [
+                "string",
+                "null"
+            ],
+            "format": "date-time",
+            "description": "发布时间，null 表示草稿"
+        },
+        "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "创建时间"
+        },
+        "updated_at": {
+            "type": [
+                "string",
+                "null"
+            ],
+            "format": "date-time",
+            "description": "最后更新时间"
+        }
+    }
+}

@@ -1,0 +1,11 @@
+{
+    "version": "1.0.0",
+    "data_source": "github-trending",
+    "last_updated": null,
+    "total_projects": 0,
+    "stages": {
+        "scrape": "Stage 1: GitHub Trending 爬取 + AI 过滤 + GitHub API 补充 + LLM 分析",
+        "build": "Stage 2: Astro SSG 静态页面生成",
+        "publish": "Stage 3: Nginx / CDN 静态文件发布"
+    }
+}

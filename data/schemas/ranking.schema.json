@@ -1,0 +1,102 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "$id": "https://tishi.dev/schemas/ranking.schema.json",
+    "title": "Tishi Daily Ranking",
+    "description": "每日排行榜快照",
+    "type": "object",
+    "required": [
+        "date",
+        "total",
+        "items"
+    ],
+    "properties": {
+        "date": {
+            "type": "string",
+            "format": "date",
+            "description": "排行榜日期 (YYYY-MM-DD)"
+        },
+        "total": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "上榜项目总数"
+        },
+        "items": {
+            "type": "array",
+            "description": "按 rank 排序的项目列表",
+            "items": {
+                "type": "object",
+                "required": [
+                    "rank",
+                    "project_id",
+                    "full_name",
+                    "score"
+                ],
+                "properties": {
+                    "rank": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "排名"
+                    },
+                    "project_id": {
+                        "type": "integer",
+                        "description": "GitHub 仓库 ID"
+                    },
+                    "full_name": {
+                        "type": "string",
+                        "description": "owner/repo"
+                    },
+                    "summary": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "中文一句话定位（来自 analysis.summary）"
+                    },
+                    "language": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "主要编程语言"
+                    },
+                    "category": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "主分类 slug"
+                    },
+                    "stars": {
+                        "type": "integer",
+                        "description": "当前 Star 总数"
+                    },
+                    "daily_stars": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ],
+                        "description": "今日新增 Star"
+                    },
+                    "weekly_stars": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ],
+                        "description": "本周新增 Star"
+                    },
+                    "score": {
+                        "type": "number",
+                        "description": "热度评分"
+                    },
+                    "rank_change": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ],
+                        "description": "与前一日的排名变化（正=上升, 负=下降, null=新入榜）"
+                    }
+                }
+            }
+        }
+    }
+}

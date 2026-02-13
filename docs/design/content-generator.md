@@ -2,169 +2,102 @@
 
 ## 概述
 
-Content Generator 基于 Analyzer 的分析结果，自动生成 Markdown 格式的博客文章，包括周报、月报和新项目速递。
+Content Generator 基于 data/projects/ 和 data/rankings/ 中的数据，自动生成博客文章 JSON，输出到 `data/posts/*.json`。
 
 ## 文章类型
 
-| 类型 | 触发频率 | 内容 |
-|------|----------|------|
-| **weekly** | 每周日 06:00 UTC | AI 开源周报：本周 Top 10 变动、新入榜项目、Star 增长最快 |
-| **monthly** | 每月 1 日 06:00 UTC | AI 开源月报：月度排名变化、分类趋势、年度对比 |
-| **spotlight** | 新项目首次入榜时 | 新项目速递：项目介绍、核心特点、快速上手 |
+| 类型 | 频率 | 内容 |
+|------|------|------|
+| **weekly** | 每周 | AI 开源周报：本周 Star 增长 Top 10、新入榜项目、排名变动 |
+| **monthly** | 每月 | AI 开源月报：月度趋势、分类统计、年度对比 |
+| **spotlight** | 不定期 | 项目深度解读：基于 LLM 分析的完整项目报告 |
 
-## 文章模板
+## 输出格式
+
+博客文章以 JSON 文件存储在 `data/posts/`，符合 `data/schemas/post.schema.json`：
+
+```json
+{
+  "slug": "ai-weekly-2025-w29",
+  "title": "AI 开源周报 #29 | 2025-07-14 ~ 2025-07-20",
+  "content": "## 本周概览\n\n本周 Trending 共收录 35 个 AI 项目...",
+  "post_type": "weekly",
+  "published_at": "2025-07-20T06:00:00Z",
+  "projects": ["langchain-ai__langchain", "ollama__ollama"],
+  "metadata": {
+    "new_entries": 5,
+    "top_gainer": "example__project",
+    "total_projects": 35
+  }
+}
+```
+
+## 模板系统
+
+使用 Go `text/template` 渲染 Markdown 内容：
 
 ### 周报模板
 
 ```markdown
----
-title: "AI 开源周报 #{{.WeekNumber}} | {{.DateRange}}"
-date: {{.PublishedAt}}
-type: weekly
----
-
 ## 本周概览
 
-本周 Top 100 共有 {{.NewEntries}} 个新入榜项目，{{.BigMovers}} 个项目排名大幅变动。
+本周 AI Trending 共收录 {{.TotalProjects}} 个项目，{{.NewEntries}} 个新入榜。
 
-## 🔥 本周 Star 增长 Top 10
+## 🔥 Star 增长 Top 10
 
-| 排名 | 项目 | 周增 Star | 总 Star | 分类 |
-|------|------|-----------|---------|------|
-{{range .TopGainers}}
-| {{.Rank}} | [{{.FullName}}]({{.URL}}) | +{{.WeeklyGain}} | {{.Stars}} | {{.Category}} |
+| 排名 | 项目 | 语言 | 周增 Star | 总 Star | 分类 |
+|------|------|------|-----------|---------|------|
+{{range .TopGainers}}| {{.Rank}} | {{.FullName}} | {{.Language}} | +{{.WeeklyStars}} | {{.Stars}} | {{.Category}} |
 {{end}}
 
 ## 🆕 新入榜项目
-
 {{range .NewProjects}}
 ### {{.FullName}}
 
-> {{.Description}}
+> {{.Summary}}
 
-- ⭐ Star: {{.Stars}} | 🍴 Fork: {{.Forks}} | 📝 语言: {{.Language}}
-- 🏷️ 分类: {{.Categories}}
-- 📅 首次入榜: {{.FirstSeenAt}}
+⭐ {{.Stars}} | 🍴 {{.Forks}} | 📝 {{.Language}} | 🏷️ {{.Categories}}
 {{end}}
-
-## 📊 排名变动
-
-{{range .BigChanges}}
-- {{.Direction}} **{{.FullName}}**: {{.OldRank}} → {{.NewRank}} ({{.Delta}})
-{{end}}
-
-## 📈 分类趋势
-
-| 分类 | 项目数 | 本周新增 | 平均评分 |
-|------|--------|----------|----------|
-{{range .CategoryStats}}
-| {{.Name}} | {{.Count}} | {{.NewCount}} | {{.AvgScore}} |
-{{end}}
-```
-
-### 月报模板
-
-在周报基础上增加：
-- 月度 Star 增长曲线图表数据
-- Top 100 月度稳定性分析（留存率）
-- 各分类占比环形图数据
-
-### 新项目速递模板
-
-```markdown
----
-title: "新项目速递 | {{.FullName}}"
-date: {{.PublishedAt}}
-type: spotlight
----
-
-## {{.FullName}}
-
-> {{.Description}}
-
-### 基本信息
-
-| 属性 | 值 |
-|------|-----|
-| GitHub | [{{.FullName}}]({{.URL}}) |
-| 语言 | {{.Language}} |
-| License | {{.License}} |
-| Star | {{.Stars}} |
-| 创建时间 | {{.CreatedAt}} |
-
-### 项目亮点
-
-{{.Highlights}}
-
-### 快速上手
-
-{{.QuickStart}}
-```
-
-## 模板引擎
-
-使用 Go 标准库 `text/template`，模板文件存放在 `templates/` 目录：
-
-```
-templates/
-├── weekly.md.tmpl
-├── monthly.md.tmpl
-└── spotlight.md.tmpl
 ```
 
 ## 数据查询
 
-Content Generator 运行时需要查询以下数据：
+Content Generator 运行时读取本地 JSON 文件（非数据库）：
 
-```sql
--- 本周 Star 增长 Top 10
-SELECT p.full_name, p.description, p.language,
-       s_today.stargazers_count - s_week_ago.stargazers_count AS weekly_gain
-FROM projects p
-JOIN daily_snapshots s_today ON p.id = s_today.project_id AND s_today.snapshot_date = CURRENT_DATE
-JOIN daily_snapshots s_week_ago ON p.id = s_week_ago.project_id AND s_week_ago.snapshot_date = CURRENT_DATE - 7
-ORDER BY weekly_gain DESC
-LIMIT 10;
+```go
+func (g *Generator) loadWeeklyData(date time.Time) (*WeeklyData, error) {
+    // 1. 读取本周 7 天的 rankings
+    rankings := g.loadRankings(date.AddDate(0, 0, -7), date)
 
--- 本周新入榜项目
-SELECT p.*
-FROM projects p
-WHERE p.first_seen_at >= CURRENT_DATE - INTERVAL '7 days'
-  AND p.rank IS NOT NULL AND p.rank <= 100
-ORDER BY p.rank ASC;
-```
+    // 2. 读取所有 projects (已有 analysis.status == "published" 的)
+    projects := g.loadPublishedProjects()
 
-## 生成流程
-
-```
-ContentGenerator.Run(postType)
-  │
-  ├── 1. 根据 postType 选择模板
-  │
-  ├── 2. 查询所需数据
-  │      ├── 排行榜变动
-  │      ├── Star 增长 Top N
-  │      ├── 新入榜项目
-  │      └── 分类统计
-  │
-  ├── 3. 构造模板数据结构
-  │
-  ├── 4. 渲染模板 → Markdown 字符串
-  │
-  ├── 5. 生成 slug（日期 + 类型）
-  │
-  └── 6. Upsert 到 blog_posts 表
+    // 3. 计算周增 Star = 最新快照 - 7天前快照
+    // 4. 找出新入榜项目
+    // 5. 排名变动统计
+    return &WeeklyData{...}, nil
+}
 ```
 
 ## Slug 生成规则
 
 ```
-weekly:    ai-weekly-2026-w07
-monthly:   ai-monthly-2026-02
-spotlight: new-project-owner-repo-name
+weekly:    ai-weekly-2025-w29
+monthly:   ai-monthly-2025-07
+spotlight: spotlight-langchain-ai-langchain
+```
+
+## CLI 命令
+
+```bash
+tishi generate                     # 生成所有到期的文章
+tishi generate --type=weekly       # 仅生成周报
+tishi generate --type=spotlight --id=owner__repo  # 为指定项目生成 Spotlight
+tishi generate --dry-run           # 仅打印内容，不写文件
 ```
 
 ## 相关文档
 
-- [趋势分析](analyzer.md) — 上游分析结果
-- [前端展示](web-frontend.md) — 博客文章展示
+- [评分排名](analyzer.md) — 排行榜数据来源
+- [LLM 分析](llm-analyzer.md) — Spotlight 文章的项目分析来源
+- [前端展示](web-frontend.md) — 博客页面展示

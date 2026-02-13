@@ -1,177 +1,113 @@
-# 定时调度模块设计（Scheduler）
+# 定时调度设计（Scheduler）
 
-## 概述
+> **⚠️ v1.0 架构变更** — v1.0 不再使用内置的 `robfig/cron` 调度器。改为外部 cron（系统 crontab）触发 CLI 命令。本文档描述新的调度方案。
 
-Scheduler 基于 `robfig/cron/v3`，内嵌在 tishi 主进程中，负责编排数据采集、趋势分析、内容生成等定时任务。
+## v1.0 调度方案
 
-## 任务清单
+Stage 1（采集+分析）通过系统 crontab 触发 CLI 命令链：
 
-| 任务 | Cron 表达式 | UTC 时间 | 说明 |
-|------|-------------|----------|------|
-| 数据采集 | `0 0 * * *` | 每日 00:00 | 采集 GitHub AI 项目数据 |
-| 趋势分析 | `0 1 * * *` | 每日 01:00 | 计算评分、排名、趋势检测 |
-| 前端重建 | `0 2 * * *` | 每日 02:00 | 触发 Astro SSG 重新构建 |
-| 周报生成 | `0 6 * * 0` | 每周日 06:00 | 生成 AI 开源周报 |
-| 月报生成 | `0 6 1 * *` | 每月 1 日 06:00 | 生成 AI 开源月报 |
-
-## 任务编排
-
-```
-每日任务链（串行执行）：
-
-00:00 ─── Collector ──── 01:00 ─── Analyzer ──── 02:00 ─── Astro Build
-  │         ▲                         ▲                       ▲
-  │         │                         │                       │
-  │    采集 GitHub 数据          计算评分排名            重建静态页面
-  │    写入 DB                   趋势检测
-  │
-  └── 如采集失败，Analyzer 使用上一次数据运行
-
-周报/月报（独立触发，不阻塞每日任务）：
-
-周日 06:00 ─── Content Generator (weekly)
-月初 06:00 ─── Content Generator (monthly)
+```cron
+# Machine A: 每日 UTC 00:00 运行 Stage 1 完整 pipeline
+0 0 * * * cd /opt/tishi && ./run-pipeline.sh >> /var/log/tishi/pipeline.log 2>&1
 ```
 
-## 实现
-
-```go
-package scheduler
-
-import (
-    "context"
-    "github.com/robfig/cron/v3"
-    "go.uber.org/zap"
-)
-
-type Scheduler struct {
-    cron      *cron.Cron
-    collector *collector.Collector
-    analyzer  *analyzer.Analyzer
-    generator *content.Generator
-    logger    *zap.Logger
-}
-
-func New(opts ...Option) *Scheduler {
-    s := &Scheduler{
-        cron: cron.New(cron.WithSeconds(), cron.WithLogger(cronLogger)),
-    }
-    for _, opt := range opts {
-        opt(s)
-    }
-    return s
-}
-
-func (s *Scheduler) Start(ctx context.Context) error {
-    // 每日采集 → 分析 → 构建（串行链）
-    s.cron.AddFunc("0 0 0 * * *", s.dailyPipeline)
-
-    // 周报
-    s.cron.AddFunc("0 0 6 * * 0", s.weeklyReport)
-
-    // 月报
-    s.cron.AddFunc("0 0 6 1 * *", s.monthlyReport)
-
-    s.cron.Start()
-    s.logger.Info("scheduler started")
-
-    <-ctx.Done()
-    s.cron.Stop()
-    return nil
-}
-
-func (s *Scheduler) dailyPipeline() {
-    ctx := context.Background()
-
-    // 1. 采集
-    s.logger.Info("daily pipeline: starting collection")
-    if err := s.collector.Run(ctx); err != nil {
-        s.logger.Error("collection failed", zap.Error(err))
-        // 采集失败不阻塞分析（使用上次数据）
-    }
-
-    // 2. 分析
-    s.logger.Info("daily pipeline: starting analysis")
-    if err := s.analyzer.Run(ctx); err != nil {
-        s.logger.Error("analysis failed", zap.Error(err))
-        return
-    }
-
-    // 3. 触发 Astro 重建
-    s.logger.Info("daily pipeline: triggering SSG rebuild")
-    if err := s.triggerBuild(ctx); err != nil {
-        s.logger.Error("SSG rebuild failed", zap.Error(err))
-    }
-
-    s.logger.Info("daily pipeline: completed")
-}
-```
-
-## 任务锁
-
-防止任务重叠执行（如上一次采集未完成，新的 cron 又触发）：
-
-```go
-type TaskLock struct {
-    mu      sync.Mutex
-    running map[string]bool
-}
-
-func (l *TaskLock) TryLock(taskName string) bool {
-    l.mu.Lock()
-    defer l.mu.Unlock()
-    if l.running[taskName] {
-        return false // 已在运行
-    }
-    l.running[taskName] = true
-    return true
-}
-
-func (l *TaskLock) Unlock(taskName string) {
-    l.mu.Lock()
-    defer l.mu.Unlock()
-    delete(l.running, taskName)
-}
-```
-
-## 手动触发
-
-除定时执行外，所有任务支持通过 CLI 手动触发：
+### Pipeline 脚本
 
 ```bash
-tishi collect    # 手动采集
-tishi analyze    # 手动分析
-tishi generate weekly   # 手动生成周报
-tishi generate monthly  # 手动生成月报
+#!/bin/bash
+# run-pipeline.sh — Stage 1 每日 pipeline
+set -euo pipefail
+
+DATE=$(date -u +%Y-%m-%d)
+LOG_PREFIX="[${DATE}]"
+
+echo "${LOG_PREFIX} Starting daily pipeline..."
+
+# 1. 爬取 Trending + AI 过滤 + GitHub API 补充
+echo "${LOG_PREFIX} Step 1: Scraping..."
+./tishi scrape --since=daily 2>&1
+
+# 2. LLM 分析未分析的新项目
+echo "${LOG_PREFIX} Step 2: LLM Analysis..."
+./tishi analyze 2>&1
+
+# 3. 评分排名
+echo "${LOG_PREFIX} Step 3: Scoring..."
+./tishi score 2>&1
+
+# 4. 生成博客文章（如果是周日/月初）
+DOW=$(date -u +%u)
+DOM=$(date -u +%d)
+if [ "$DOW" = "7" ]; then
+    echo "${LOG_PREFIX} Step 4a: Generating weekly report..."
+    ./tishi generate --type=weekly 2>&1
+fi
+if [ "$DOM" = "01" ]; then
+    echo "${LOG_PREFIX} Step 4b: Generating monthly report..."
+    ./tishi generate --type=monthly 2>&1
+fi
+
+# 5. Git push
+echo "${LOG_PREFIX} Step 5: Pushing data..."
+./tishi push 2>&1
+
+echo "${LOG_PREFIX} Pipeline completed."
+```
+
+### Stage 2 调度
+
+```cron
+# Machine B: 每日 UTC 01:00 (给 Stage 1 一小时完成)
+0 1 * * * cd /opt/tishi && git pull && cd web && npm run build && rsync -avz dist/ machineC:/var/www/tishi/
+```
+
+## 与 v0.x 对比
+
+| 维度 | v0.x | v1.0 |
+|------|------|------|
+| 调度方式 | `robfig/cron/v3` 内置 | 系统 crontab 外部 |
+| 进程模型 | Go 常驻进程 + 内置 cron | CLI 按需执行 |
+| 任务编排 | Go 代码串行调用 | Shell 脚本串行 |
+| 任务锁 | Go sync.Mutex | flock(1) 文件锁 |
+| 依赖 | robfig/cron 库 | 系统 crontab (零依赖) |
+
+## 任务锁（防重复执行）
+
+使用 `flock` 文件锁防止任务重叠：
+
+```bash
+# crontab 中使用 flock
+0 0 * * * flock -n /tmp/tishi-pipeline.lock /opt/tishi/run-pipeline.sh
 ```
 
 ## 超时控制
 
-| 任务 | 超时 | 说明 |
+| 步骤 | 超时 | 说明 |
 |------|------|------|
-| Collector | 30min | GitHub API 受 Rate Limit 影响 |
-| Analyzer | 5min | 纯数据库计算 |
-| Content Generator | 5min | 查询 + 渲染 |
-| Astro Build | 10min | Node.js 构建 |
+| tishi scrape | 15min | Colly 爬取 + GitHub API |
+| tishi analyze | 30min | LLM API 调用（每项目 ~10s） |
+| tishi score | 1min | 本地 JSON 计算 |
+| tishi generate | 1min | 模板渲染 |
+| tishi push | 2min | Git push |
 
-## 可观测性
+可通过 `timeout` 命令控制：
 
-每次任务执行记录：
-- 开始时间、结束时间、耗时
-- 成功/失败状态
-- 错误信息（如有）
-
-```go
-s.logger.Info("task completed",
-    zap.String("task", "collector"),
-    zap.Duration("duration", elapsed),
-    zap.Int("projects_collected", count),
-    zap.Error(err),
-)
+```bash
+timeout 15m ./tishi scrape
+timeout 30m ./tishi analyze
 ```
+
+## Phase 4 清理计划
+
+将移除：
+
+- `internal/scheduler/` — 整个调度器包
+- `robfig/cron/v3` 依赖
+- `internal/cmd/server.go` 中的 scheduler 启动逻辑
 
 ## 相关文档
 
-- [数据采集](collector.md) — Collector 详设
-- [趋势分析](analyzer.md) — Analyzer 详设
-- [内容生成](content-generator.md) — Generator 详设
+- [数据采集](collector.md) — Scraper 详设
+- [LLM 分析](llm-analyzer.md) — LLM 分析详设
+- [评分排名](analyzer.md) — Scorer 详设
+- [部署拓扑](../architecture/deployment-topology.md) — cron 配置

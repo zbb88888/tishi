@@ -1,0 +1,261 @@
+[
+    {
+        "slug": "llm",
+        "name": "大语言模型",
+        "description": "LLM、ChatBot、文本生成相关项目",
+        "sort_order": 1,
+        "keywords": {
+            "topics": [
+                "llm",
+                "large-language-model",
+                "gpt",
+                "chatgpt",
+                "llama",
+                "mistral",
+                "chatbot",
+                "text-generation",
+                "language-model"
+            ],
+            "description": [
+                "large language model",
+                "LLM",
+                "chatbot",
+                "text generation"
+            ]
+        },
+        "project_ids": []
+    },
+    {
+        "slug": "agent",
+        "name": "AI Agent",
+        "description": "AI Agent 框架、自主代理、Agentic 工具",
+        "sort_order": 2,
+        "keywords": {
+            "topics": [
+                "ai-agent",
+                "autonomous-agent",
+                "agent-framework",
+                "agentic",
+                "langchain",
+                "autogpt",
+                "crew-ai"
+            ],
+            "description": [
+                "AI agent",
+                "autonomous agent",
+                "agentic",
+                "agent framework"
+            ]
+        },
+        "project_ids": []
+    },
+    {
+        "slug": "rag",
+        "name": "RAG",
+        "description": "检索增强生成、知识库、文档问答",
+        "sort_order": 3,
+        "keywords": {
+            "topics": [
+                "rag",
+                "retrieval-augmented-generation",
+                "vector-search",
+                "document-qa",
+                "knowledge-base"
+            ],
+            "description": [
+                "retrieval augmented",
+                "RAG",
+                "document Q&A",
+                "knowledge base"
+            ]
+        },
+        "project_ids": []
+    },
+    {
+        "slug": "diffusion",
+        "name": "图像生成",
+        "description": "Diffusion 模型、文生图、图像编辑",
+        "sort_order": 4,
+        "keywords": {
+            "topics": [
+                "stable-diffusion",
+                "diffusion-models",
+                "text-to-image",
+                "image-generation",
+                "comfyui",
+                "sdxl"
+            ],
+            "description": [
+                "stable diffusion",
+                "text to image",
+                "image generation",
+                "diffusion model"
+            ]
+        },
+        "project_ids": []
+    },
+    {
+        "slug": "mlops",
+        "name": "MLOps",
+        "description": "ML 工程化、模型训练/部署/监控",
+        "sort_order": 5,
+        "keywords": {
+            "topics": [
+                "mlops",
+                "ml-pipeline",
+                "model-serving",
+                "feature-store",
+                "ml-platform",
+                "model-training"
+            ],
+            "description": [
+                "MLOps",
+                "model serving",
+                "ML pipeline",
+                "feature store"
+            ]
+        },
+        "project_ids": []
+    },
+    {
+        "slug": "vector-db",
+        "name": "向量数据库",
+        "description": "向量存储、相似度搜索、Embedding",
+        "sort_order": 6,
+        "keywords": {
+            "topics": [
+                "vector-database",
+                "vector-store",
+                "similarity-search",
+                "embedding-database"
+            ],
+            "description": [
+                "vector database",
+                "vector store",
+                "similarity search",
+                "embedding"
+            ]
+        },
+        "project_ids": []
+    },
+    {
+        "slug": "framework",
+        "name": "AI 框架",
+        "description": "深度学习框架、训练工具",
+        "sort_order": 7,
+        "keywords": {
+            "topics": [
+                "pytorch",
+                "tensorflow",
+                "deep-learning",
+                "machine-learning",
+                "neural-network",
+                "jax",
+                "transformers"
+            ],
+            "description": [
+                "deep learning framework",
+                "ML framework",
+                "neural network"
+            ]
+        },
+        "project_ids": []
+    },
+    {
+        "slug": "tool",
+        "name": "AI 工具",
+        "description": "AI 辅助开发、代码生成、AI 助手",
+        "sort_order": 8,
+        "keywords": {
+            "topics": [
+                "ai-tool",
+                "ai-assistant",
+                "copilot",
+                "code-generation",
+                "ai-coding",
+                "ai-powered"
+            ],
+            "description": [
+                "AI tool",
+                "AI assistant",
+                "code generation",
+                "AI powered"
+            ]
+        },
+        "project_ids": []
+    },
+    {
+        "slug": "multimodal",
+        "name": "多模态",
+        "description": "多模态模型、视觉语言模型",
+        "sort_order": 9,
+        "keywords": {
+            "topics": [
+                "multimodal",
+                "vision-language-model",
+                "vlm",
+                "visual-question-answering"
+            ],
+            "description": [
+                "multimodal",
+                "vision language",
+                "VLM"
+            ]
+        },
+        "project_ids": []
+    },
+    {
+        "slug": "speech",
+        "name": "语音",
+        "description": "TTS、ASR、语音克隆",
+        "sort_order": 10,
+        "keywords": {
+            "topics": [
+                "text-to-speech",
+                "tts",
+                "asr",
+                "speech-recognition",
+                "voice-cloning",
+                "speech-synthesis"
+            ],
+            "description": [
+                "text to speech",
+                "TTS",
+                "speech recognition",
+                "voice clone"
+            ]
+        },
+        "project_ids": []
+    },
+    {
+        "slug": "rl",
+        "name": "强化学习",
+        "description": "RLHF、强化学习框架",
+        "sort_order": 11,
+        "keywords": {
+            "topics": [
+                "reinforcement-learning",
+                "rlhf",
+                "reward-model",
+                "ppo"
+            ],
+            "description": [
+                "reinforcement learning",
+                "RLHF",
+                "reward model"
+            ]
+        },
+        "project_ids": []
+    },
+    {
+        "slug": "other",
+        "name": "其他",
+        "description": "未归类的 AI 相关项目",
+        "sort_order": 99,
+        "keywords": {
+            "topics": [],
+            "description": []
+        },
+        "project_ids": []
+    }
+]

@@ -2,210 +2,282 @@
 
 ## 概述
 
-tishi 使用 Docker Compose 单机部署，包含 Go 应用、PostgreSQL、Nginx 三个容器。
+v1.0 采用三阶段独立部署，每个阶段可部署在不同机器上，通过 Git 仓库交换数据。也支持单机简化部署。
 
 ## 前置条件
 
+### Machine A（数据采集 + 分析）
+
 | 要求 | 说明 |
 |------|------|
-| 服务器 | Linux（Ubuntu 22.04+ / Debian 12+） |
-| 配置 | 最低 1 CPU / 1GB RAM / 10GB 磁盘 |
-| Docker | ≥ 24.x |
-| Docker Compose | v2 |
-| 域名（可选） | 用于 HTTPS |
+| OS | Linux / macOS |
+| 配置 | 最低 1 CPU / 512MB RAM |
+| Go | ≥ 1.23（构建 CLI 用） |
+| Git | ≥ 2.x |
 
-## 部署步骤
+### Machine B（SSG 构建）
 
-### 1. 克隆项目
+| 要求 | 说明 |
+|------|------|
+| OS | Linux / macOS |
+| 配置 | 最低 1 CPU / 1GB RAM |
+| Node.js | ≥ 20 LTS |
+| pnpm | ≥ 9.x |
+| Git | ≥ 2.x |
+
+### Machine C（Web 服务）
+
+| 要求 | 说明 |
+|------|------|
+| OS | Linux |
+| 配置 | 最低 1 CPU / 256MB RAM |
+| Nginx | ≥ 1.24 或 Docker |
+
+## 三机部署
+
+### Machine A：数据采集 + LLM 分析
 
 ```bash
+# 1. 克隆项目
 git clone https://github.com/zbb88888/tishi.git
 cd tishi
+
+# 2. 配置
+cp config.yaml.example config.yaml
+vim config.yaml
+# 配置 llm.api_key 和 github.tokens
+
+# 3. 构建
+make build
+
+# 4. 手动运行 pipeline 一次，检查正常
+./bin/tishi scrape
+./bin/tishi analyze
+./bin/tishi score
+./bin/tishi generate --type weekly
+./bin/tishi push
+
+# 5. 配置 crontab
+crontab -e
 ```
 
-### 2. 配置环境变量
+Crontab 配置：
 
-```bash
-cp .env.example .env
-vim .env
+```cron
+# 每日 00:00 UTC 运行完整 pipeline
+0 0 * * *  cd /opt/tishi && flock -n /tmp/tishi-pipeline.lock ./scripts/run-pipeline.sh >> /var/log/tishi/pipeline.log 2>&1
+
+# 每周日 06:00 UTC 生成周报
+0 6 * * 0  cd /opt/tishi && ./bin/tishi generate --type weekly && ./bin/tishi push >> /var/log/tishi/weekly.log 2>&1
 ```
 
-必须配置的变量：
+Pipeline 脚本 `scripts/run-pipeline.sh`：
 
 ```bash
-# 数据库密码（生产环境请使用强密码）
-DB_PASSWORD=your_secure_password_here
+#!/bin/bash
+set -euo pipefail
 
-# GitHub Token（至少一个，逗号分隔多个）
-GITHUB_TOKENS=ghp_your_token_here
+cd "$(dirname "$0")/.."
+LOG_PREFIX="[$(date -u +%Y-%m-%dT%H:%M:%SZ)]"
 
-# 站点域名（可选，用于 Nginx 配置）
-SITE_DOMAIN=tishi.example.com
+echo "$LOG_PREFIX Starting pipeline..."
+
+# 拉取最新数据（其他机器可能推送了审核结果）
+git pull --rebase origin main
+
+# 抓取 Trending + 过滤 AI 项目 + API enrichment
+./bin/tishi scrape
+echo "$LOG_PREFIX scrape done"
+
+# LLM 分析（仅对新项目或过期项目）
+./bin/tishi analyze
+echo "$LOG_PREFIX analyze done"
+
+# 评分排名
+./bin/tishi score
+echo "$LOG_PREFIX score done"
+
+# 推送数据到 Git
+./bin/tishi push
+echo "$LOG_PREFIX push done"
 ```
 
-### 3. 构建前端
+### Machine B：Astro SSG 构建
 
 ```bash
-cd web
-pnpm install
-pnpm build
-cd ..
+# 1. 克隆项目
+git clone https://github.com/zbb88888/tishi.git
+cd tishi
+
+# 2. 安装前端依赖
+cd web && pnpm install && cd ..
+
+# 3. 配置 crontab — 在 Machine A pipeline 完成后运行
+crontab -e
 ```
 
-### 4. 启动服务
-
-```bash
-# 构建并启动所有容器
-docker-compose up -d --build
-
-# 查看状态
-docker-compose ps
-
-# 执行数据库迁移
-docker-compose exec tishi /tishi migrate
-
-# 查看日志
-docker-compose logs -f
+```cron
+# 每日 02:00 UTC（Machine A 00:00 跑完后）
+0 2 * * *  cd /opt/tishi && git pull --rebase origin main && cd web && pnpm build >> /var/log/tishi/build.log 2>&1
 ```
 
-### 5. 验证
+构建产物在 `web/dist/`，可通过以下方式发布到 Machine C：
+
+- `rsync -avz web/dist/ machineC:/var/www/tishi/`
+- 或将 `dist/` 推送到另一个 Git 仓库
+
+### Machine C：Nginx 静态托管
 
 ```bash
-# 健康检查
-curl http://localhost/healthz
+# 1. 安装 Nginx
+apt install nginx
 
-# 测试 API
-curl http://localhost/api/v1/categories
+# 2. 配置站点
+cat > /etc/nginx/sites-available/tishi << 'EOF'
+server {
+    listen 80;
+    server_name tishi.example.com;
+    root /var/www/tishi;
+    index index.html;
 
-# 手动触发首次数据采集
-docker-compose exec tishi /tishi collect
-docker-compose exec tishi /tishi analyze
+    gzip on;
+    gzip_types text/html text/css application/javascript application/json image/svg+xml;
+    gzip_min_length 1024;
+
+    location / {
+        try_files $uri $uri/ /404.html;
+    }
+
+    # 缓存静态资源
+    location ~* \.(css|js|png|jpg|svg|woff2)$ {
+        expires 30d;
+        add_header Cache-Control "public, immutable";
+    }
+
+    # JSON 数据不缓存
+    location ~* \.json$ {
+        expires -1;
+        add_header Cache-Control "no-cache";
+    }
+}
+EOF
+
+ln -s /etc/nginx/sites-available/tishi /etc/nginx/sites-enabled/
+nginx -t && systemctl reload nginx
 ```
 
-## HTTPS 配置（Let's Encrypt）
+## 单机简化部署
 
-### 使用 Certbot
+三个阶段在同一台机器上运行：
 
 ```bash
-# 安装 certbot
-apt install certbot
+# 1. 环境准备
+# 需要 Go 1.23+, Node.js 20+, pnpm 9+, Nginx
 
-# 获取证书（先停止 Nginx 或使用 webroot 方式）
-certbot certonly --standalone -d tishi.example.com
+# 2. 克隆 + 配置
+git clone https://github.com/zbb88888/tishi.git
+cd tishi
+cp config.yaml.example config.yaml
+vim config.yaml
 
-# 证书路径
-# /etc/letsencrypt/live/tishi.example.com/fullchain.pem
-# /etc/letsencrypt/live/tishi.example.com/privkey.pem
+# 3. 构建 CLI + 前端
+make build
+cd web && pnpm install && pnpm build && cd ..
 
-# 复制到项目目录
-cp /etc/letsencrypt/live/tishi.example.com/fullchain.pem deploy/nginx/certs/
-cp /etc/letsencrypt/live/tishi.example.com/privkey.pem deploy/nginx/certs/
-
-# 重启 Nginx
-docker-compose restart nginx
+# 4. 配置 Nginx → web/dist/
+# 5. 配置 crontab
 ```
 
-### 自动续期
+单机 Crontab：
+
+```cron
+# 每日 00:00 完整 pipeline
+0 0 * * *  cd /opt/tishi && flock -n /tmp/tishi.lock ./scripts/run-pipeline.sh >> /var/log/tishi/pipeline.log 2>&1
+
+# 每日 02:00 重新构建前端
+0 2 * * *  cd /opt/tishi/web && pnpm build >> /var/log/tishi/build.log 2>&1
+
+# 每周日 06:00 生成周报 + 重建前端
+0 6 * * 0  cd /opt/tishi && ./bin/tishi generate --type weekly && cd web && pnpm build >> /var/log/tishi/weekly.log 2>&1
+```
+
+## HTTPS（Let's Encrypt）
 
 ```bash
-# 添加 cron 任务
-echo "0 0 1 * * certbot renew --quiet && docker-compose restart nginx" | crontab -
+apt install certbot python3-certbot-nginx
+certbot --nginx -d tishi.example.com
+
+# 自动续期（certbot 自带 timer）
+systemctl enable certbot.timer
 ```
 
 ## 备份
 
-### 自动备份脚本
+v1.0 数据全部在 Git 仓库中，备份 = Git push 到远程仓库。
 
 ```bash
-#!/bin/bash
-# scripts/backup.sh
-set -euo pipefail
-
-BACKUP_DIR="/backups/tishi"
-DATE=$(date +%Y%m%d_%H%M%S)
-KEEP_DAYS=30
-
-mkdir -p "$BACKUP_DIR"
-
-# 备份数据库
-docker-compose exec -T postgres pg_dump -U tishi tishi_db | gzip > "$BACKUP_DIR/db_${DATE}.sql.gz"
-
-# 清理旧备份
-find "$BACKUP_DIR" -name "*.sql.gz" -mtime +$KEEP_DAYS -delete
-
-echo "Backup completed: $BACKUP_DIR/db_${DATE}.sql.gz"
-```
-
-### 恢复
-
-```bash
-# 解压并恢复
-gunzip < backup_20260212.sql.gz | docker-compose exec -T postgres psql -U tishi tishi_db
+# 数据已通过 tishi push 推送到 Git 远程
+# 额外备份：推送到第二个远程
+git remote add backup git@backup-server:tishi-data.git
+git push backup main
 ```
 
 ## 更新部署
 
 ```bash
-# 拉取最新代码
+# Machine A
+cd /opt/tishi
 git pull
+make build
+# crontab 自动生效
 
-# 重新构建前端
-cd web && pnpm build && cd ..
+# Machine B
+cd /opt/tishi
+git pull
+cd web && pnpm install && pnpm build
 
-# 重新构建并重启
-docker-compose up -d --build
-
-# 执行新的数据库迁移（如有）
-docker-compose exec tishi /tishi migrate
+# Machine C（如果使用 rsync）
+# Machine B 构建后自动 rsync
 ```
 
 ## 监控
 
-### 日志查看
+### 日志
 
 ```bash
-# 所有服务日志
-docker-compose logs -f
+# Pipeline 日志
+tail -f /var/log/tishi/pipeline.log
 
-# 仅 tishi 应用日志
-docker-compose logs -f tishi
+# 构建日志
+tail -f /var/log/tishi/build.log
 
-# 仅最近 100 行
-docker-compose logs --tail 100 tishi
+# Nginx 访问日志
+tail -f /var/log/nginx/access.log
 ```
 
 ### 健康检查
 
-Docker 内置 healthcheck 会自动监控，容器异常时自动重启（`restart: unless-stopped`）。
-
 ```bash
-# 查看容器健康状态
-docker-compose ps
-docker inspect tishi --format='{{.State.Health.Status}}'
-```
+# 检查数据是否每日更新
+ls -lt data/rankings/ | head -5
 
-### 磁盘监控
+# 检查前端构建时间
+stat web/dist/index.html
 
-```bash
-# 查看数据库数据量
-docker-compose exec postgres psql -U tishi -d tishi_db -c "
-SELECT schemaname, tablename,
-       pg_size_pretty(pg_total_relation_size(schemaname||'.'||tablename)) AS size
-FROM pg_tables
-WHERE schemaname = 'public'
-ORDER BY pg_total_relation_size(schemaname||'.'||tablename) DESC;
-"
+# 检查 Nginx
+curl -I http://tishi.example.com
 ```
 
 ## 故障排查
 
 | 问题 | 排查 |
 |------|------|
-| 容器启动失败 | `docker-compose logs <service>` |
-| 数据库连接失败 | 检查 `DB_PASSWORD` 环境变量，`pg_isready` 测试连接 |
-| 采集无数据 | 检查 `GITHUB_TOKENS` 是否有效，查看采集日志 |
-| 前端 404 | 确认 `web/dist/` 存在且已挂载到 Nginx |
-| API 502 | tishi 容器可能未就绪，检查 healthcheck 状态 |
+| Pipeline 无数据 | 检查 `config.yaml` 中的 Token/API Key |
+| LLM 分析失败 | 检查 `llm.api_key` 和 provider 配置 |
+| 前端构建失败 | `cd web && pnpm install` 重装依赖 |
+| Nginx 404 | 确认 `root` 指向 `web/dist/` |
+| Git push 冲突 | `git pull --rebase` 后重试 |
+| 数据不更新 | 检查 crontab (`crontab -l`) 和 flock 锁 |
 
 ## 相关文档
 

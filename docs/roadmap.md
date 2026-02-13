@@ -1,106 +1,61 @@
 # 版本路线图
 
-## 版本规划
+> 最后更新: 2025-07-15
 
-### v0.1 — MVP（最小可行产品）
+## 历史版本
 
-**目标**：跑通数据采集 → 存储 → API → 基础排行榜展示
+### v0.1 — Full-Stack MVP ✅
 
-**功能**：
-- [x] 项目文档体系搭建
-- [ ] Go 项目脚手架（cmd/internal/Makefile）
-- [ ] PostgreSQL Schema + 迁移脚本
-- [ ] GitHub Search API 数据采集（基础版）
-- [ ] 基础 RESTful API（rankings/projects）
-- [ ] Astro 前端脚手架
-- [ ] 首页 Top 100 排行榜页面
-- [ ] Docker Compose 部署配置
-- [ ] 每日定时采集（Scheduler）
+跑通 GitHub Search API → PostgreSQL → chi API → Astro SSR 排行榜全链路。
 
-**里程碑**：能看到 AI Top 100 排行榜
+- cobra CLI: server / collect / analyze / generate / migrate / version
+- chi HTTP API: 8 个端点 + Middleware + CORS + 分页
+- GitHub 数据采集器 (go-github/v67 + Token 轮换)
+- 多维加权评分分析器
+- 博客自动生成器 (weekly/monthly 模板)
+- Cron 调度器 (robfig/cron + taskLock)
+- PostgreSQL 迁移 (4 张表)
+- Astro SSR 前端 (5 个页面 + TrendChart)
+- Docker 多阶段构建 + Compose + CI + 23 篇设计文档
 
----
+### v0.2 — Quality & Observability ✅
 
-### v0.2 — 趋势分析
-
-**目标**：完善评分模型，增加趋势图表和项目详情
-
-**功能**：
-- [ ] 热度评分模型实现
-- [ ] 排名变动检测
-- [ ] Star 异常检测
-- [ ] 自动分类打标
-- [ ] 项目详情页
-- [ ] Star 增长趋势图表（Chart.js）
-- [ ] 分类浏览页
-- [ ] GraphQL 批量查询优化
-- [ ] 多 Token 轮换
-
-**里程碑**：趋势可视化上线
+Prometheus metrics、golangci-lint v2、单元测试（覆盖率 30.1%）、404 页面、Pagination 组件。
 
 ---
 
-### v0.3 — 内容生成
+## v1.0 — AI 项目深度分析平台（当前）
 
-**目标**：自动生成博客文章，完成内容驱动型博客
+### 产品差异点（vs GitHub Trending）
 
-**功能**：
-- [ ] 周报自动生成
-- [ ] 月报自动生成
-- [ ] 新项目速递
-- [ ] 博客文章列表页
-- [ ] 博客文章详情页
-- [ ] RSS Feed
-- [ ] SEO 优化（sitemap/meta/JSON-LD）
+1. **中文深度项目解读** — LLM 自动生成面向中文开发者的完整项目报告（定位/功能/优势/对比/场景），不用翻墙看英文 README
+2. **AI 垂直精选 + 分类导航** — 只收录 AI 相关项目，12 个 AI 子方向分类（LLM/Agent/RAG/图像生成/向量数据库/MLOps 等）
+3. **趋势追踪 + 历史可回溯** — 每日快照持久化，Star 增长曲线、排名变动追踪，辅助技术选型
 
-**里程碑**：博客内容自动化
+### 架构
 
----
+三阶段完全解耦，JSON + Git 交换数据，无共享数据库：
 
-### v0.4 — 打磨体验
+| Stage | 职责 | 运行环境 | 输入 | 输出 |
+|-------|------|---------|------|------|
+| 1. 采集+分析 | Trending 爬取 → AI 过滤 → LLM 中文分析 | Machine A | GitHub Trending HTML + README | data/ JSON → Git |
+| 2. SSG 构建 | Astro 静态页面生成 | Machine B | data/ JSON (Git pull) | dist/ 静态文件 |
+| 3. 发布 | Nginx / CDN 静态服务 | Machine C | dist/ 静态文件 | 用户可访问的网站 |
 
-**目标**：UI 美化、性能优化、监控告警
+### 里程碑
 
-**功能**：
-- [ ] 暗色/亮色主题切换
-- [ ] 响应式设计优化
-- [ ] 搜索功能
-- [ ] 缓存层优化
-- [ ] Prometheus 指标暴露
-- [ ] 错误告警（如采集失败通知）
-- [ ] 数据备份自动化
-
-**里程碑**：生产可用
-
----
-
-### v1.0 — 正式发布
-
-**目标**：功能完整、稳定运行、文档齐全
-
-**功能**：
-- [ ] 完整的 E2E 测试
-- [ ] CI/CD 流水线（GitHub Actions）
-- [ ] 自动化部署
-- [ ] 用户文档/使用指南
-- [ ] 性能基准测试
-- [ ] 安全审计
-
-**里程碑**：v1.0 Release
+- [x] Phase 0: 数据契约设计（JSON Schema + 目录结构）
+- [ ] Phase 1: Stage 1 采集 + LLM 分析 CLI
+- [ ] Phase 2: Stage 2 Astro SSG 重构
+- [ ] Phase 3: Stage 3 静态部署
+- [ ] Phase 4: 代码清理（移除 PG/API Server/Scheduler）
 
 ---
 
 ## 远期展望（v1.x+）
 
-- **AI 摘要** — 使用 LLM 自动生成项目评价和技术分析
-- **邮件订阅** — 周报/月报邮件推送
-- **社区互动** — 评论、投票、推荐
-- **对比功能** — 多项目横向对比
-- **API 开放** — 提供公开 API 供其他开发者使用
-- **多语言** — 支持英文界面
-
-## 当前进度
-
-**当前版本**：v0.1-dev（开发中）
-
-**最后更新**：2026-02-12
+- **Topic 订阅** — 自定义 topic（如 mcp, function-calling），基于 GitHub Search API 抓取
+- **邮件订阅** — 周报/月报推送
+- **项目对比** — 多项目横向对比
+- **RSS Feed** — 博客 RSS 输出
+- **Dark Mode** — 暗色主题

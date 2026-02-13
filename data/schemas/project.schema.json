@@ -1,0 +1,306 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "$id": "https://tishi.dev/schemas/project.schema.json",
+    "title": "Tishi Project",
+    "description": "AI 开源项目完整信息，包含基础元数据、Trending 数据和 LLM 分析报告",
+    "type": "object",
+    "required": [
+        "id",
+        "full_name",
+        "stars",
+        "forks",
+        "first_seen_at",
+        "updated_at"
+    ],
+    "properties": {
+        "id": {
+            "type": "integer",
+            "description": "GitHub 仓库唯一 ID (github_id)"
+        },
+        "full_name": {
+            "type": "string",
+            "description": "owner/repo 格式",
+            "pattern": "^[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+$"
+        },
+        "description": {
+            "type": [
+                "string",
+                "null"
+            ],
+            "description": "GitHub 原始英文描述"
+        },
+        "language": {
+            "type": [
+                "string",
+                "null"
+            ],
+            "description": "主要编程语言"
+        },
+        "license": {
+            "type": [
+                "string",
+                "null"
+            ],
+            "description": "开源协议 SPDX ID"
+        },
+        "topics": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            },
+            "description": "GitHub Topics 标签"
+        },
+        "homepage": {
+            "type": [
+                "string",
+                "null"
+            ],
+            "description": "项目主页 URL"
+        },
+        "stars": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "当前 Star 数"
+        },
+        "forks": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "当前 Fork 数"
+        },
+        "open_issues": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "当前 Open Issue 数"
+        },
+        "watchers": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "当前 Watcher 数"
+        },
+        "pushed_at": {
+            "type": [
+                "string",
+                "null"
+            ],
+            "format": "date-time",
+            "description": "最后推送时间 (ISO 8601)"
+        },
+        "created_at_gh": {
+            "type": [
+                "string",
+                "null"
+            ],
+            "format": "date-time",
+            "description": "GitHub 仓库创建时间 (ISO 8601)"
+        },
+        "is_archived": {
+            "type": "boolean",
+            "default": false,
+            "description": "项目是否已归档/删除"
+        },
+        "score": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100,
+            "description": "热度评分 0-100"
+        },
+        "rank": {
+            "type": [
+                "integer",
+                "null"
+            ],
+            "minimum": 1,
+            "description": "当前排名，null 表示未上榜"
+        },
+        "category": {
+            "type": [
+                "string",
+                "null"
+            ],
+            "description": "主分类 slug（llm/agent/rag/diffusion/mlops/vector-db/framework/tool/multimodal/speech/rl/other）"
+        },
+        "categories": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "required": [
+                    "slug",
+                    "confidence"
+                ],
+                "properties": {
+                    "slug": {
+                        "type": "string"
+                    },
+                    "confidence": {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 1
+                    }
+                }
+            },
+            "description": "所有匹配的分类及置信度"
+        },
+        "trending": {
+            "type": [
+                "object",
+                "null"
+            ],
+            "description": "GitHub Trending 来源数据",
+            "properties": {
+                "daily_stars": {
+                    "type": [
+                        "integer",
+                        "null"
+                    ],
+                    "description": "今日新增 Star (from Trending page)"
+                },
+                "weekly_stars": {
+                    "type": [
+                        "integer",
+                        "null"
+                    ],
+                    "description": "本周新增 Star (from Trending page)"
+                },
+                "rank_daily": {
+                    "type": [
+                        "integer",
+                        "null"
+                    ],
+                    "description": "Trending 日榜排名"
+                },
+                "last_seen_trending": {
+                    "type": [
+                        "string",
+                        "null"
+                    ],
+                    "format": "date",
+                    "description": "最后一次出现在 Trending 的日期"
+                }
+            }
+        },
+        "analysis": {
+            "type": [
+                "object",
+                "null"
+            ],
+            "description": "LLM 生成的中文项目分析报告",
+            "required": [
+                "status",
+                "model",
+                "summary",
+                "generated_at"
+            ],
+            "properties": {
+                "status": {
+                    "type": "string",
+                    "enum": [
+                        "draft",
+                        "published",
+                        "rejected"
+                    ],
+                    "description": "审核状态"
+                },
+                "model": {
+                    "type": "string",
+                    "description": "生成模型名称（如 deepseek-chat, qwen-turbo）"
+                },
+                "summary": {
+                    "type": "string",
+                    "description": "一句话中文定位（≤50字）"
+                },
+                "positioning": {
+                    "type": "string",
+                    "description": "项目定位分析（~200字中文）"
+                },
+                "features": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "required": [
+                            "name",
+                            "desc"
+                        ],
+                        "properties": {
+                            "name": {
+                                "type": "string",
+                                "description": "功能名称"
+                            },
+                            "desc": {
+                                "type": "string",
+                                "description": "功能描述（中文）"
+                            }
+                        }
+                    },
+                    "description": "核心功能列表"
+                },
+                "advantages": {
+                    "type": "string",
+                    "description": "核心优势分析（中文）"
+                },
+                "tech_stack": {
+                    "type": "string",
+                    "description": "技术架构概览（中文）"
+                },
+                "use_cases": {
+                    "type": "string",
+                    "description": "适用场景和目标用户（中文）"
+                },
+                "comparison": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "required": [
+                            "project",
+                            "diff"
+                        ],
+                        "properties": {
+                            "project": {
+                                "type": "string",
+                                "description": "竞品项目名"
+                            },
+                            "diff": {
+                                "type": "string",
+                                "description": "差异点（中文）"
+                            }
+                        }
+                    },
+                    "description": "同类项目对比"
+                },
+                "ecosystem": {
+                    "type": "string",
+                    "description": "社区生态与开发者活跃度评估（中文）"
+                },
+                "generated_at": {
+                    "type": "string",
+                    "format": "date-time",
+                    "description": "分析生成时间 (ISO 8601)"
+                },
+                "reviewed_at": {
+                    "type": [
+                        "string",
+                        "null"
+                    ],
+                    "format": "date-time",
+                    "description": "审核时间"
+                },
+                "token_usage": {
+                    "type": [
+                        "integer",
+                        "null"
+                    ],
+                    "description": "LLM token 消耗量"
+                }
+            }
+        },
+        "first_seen_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "tishi 首次采集到该项目的时间"
+        },
+        "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "最后更新时间"
+        }
+    }
+}
