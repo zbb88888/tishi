@@ -1,0 +1,75 @@
+---
+/**
+ * /categories/{slug} — 分类下项目列表
+ *
+ * 数据源：data/categories.json + data/projects/*.json
+ * SSG: getStaticPaths() 枚举所有分类
+ */
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import { getCategories, getProject, type Category, type Project } from '../../lib/data';
+
+export function getStaticPaths() {
+  const categories = getCategories();
+  return categories.map(cat => ({
+    params: { slug: cat.slug },
+    props: { category: cat },
+  }));
+}
+
+interface Props {
+  category: Category;
+}
+
+const { category } = Astro.props;
+
+// 加载该分类下的所有项目，按评分倒排
+const projects = category.project_ids
+  .map(id => getProject(id))
+  .filter((p): p is Project => p !== null)
+  .sort((a, b) => b.score - a.score);
+
+function formatNumber(n: number): string {
+  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
+  return String(n);
+}
+---
+
+<BaseLayout title={`${category.name} — 项目分类`}>
+  <a href="/categories" class="text-sm text-gray-500 hover:text-primary-600">← 返回分类</a>
+
+  <div class="mt-4 mb-8">
+    <h1 class="text-3xl font-bold text-gray-900">{category.name}</h1>
+    <p class="mt-2 text-gray-600">{category.description}</p>
+    <span class="mt-2 inline-block badge-blue">{projects.length} 个项目</span>
+  </div>
+
+  {projects.length === 0 ? (
+    <div class="card text-center text-gray-500 py-12">
+      <p>该分类暂无项目</p>
+    </div>
+  ) : (
+    <div class="space-y-4">
+      {projects.map(p => (
+        <a href={`/projects/${p.id}`} class="card block group">
+          <div class="flex items-start justify-between">
+            <div>
+              <h2 class="font-semibold text-gray-900 group-hover:text-primary-600 transition-colors">
+                {p.full_name}
+              </h2>
+              {p.description && (
+                <p class="mt-1 text-sm text-gray-500 line-clamp-2">{p.description}</p>
+              )}
+              {p.analysis?.summary && (
+                <p class="mt-1 text-sm text-primary-700">{p.analysis.summary}</p>
+              )}
+            </div>
+            <div class="shrink-0 ml-4 text-right">
+              <div class="text-sm font-bold text-yellow-500">⭐ {formatNumber(p.stars)}</div>
+              <div class="text-xs text-gray-400">评分 {p.score.toFixed(1)}</div>
+            </div>
+          </div>
+        </a>
+      ))}
+    </div>
+  )}
+</BaseLayout>

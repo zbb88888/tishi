@@ -1,24 +1,15 @@
 ---
+/**
+ * /blog — 博客文章列表
+ *
+ * 数据源：data/posts/*.json（已发布文章）
+ */
 import BaseLayout from '../../layouts/BaseLayout.astro';
-import Pagination from '../../components/Pagination.astro';
-import { getPosts, type BlogPost } from '../../lib/api';
+import { getPublishedPosts } from '../../lib/data';
 
-const currentPage = Number(Astro.url.searchParams.get('page') || '1');
-const perPage = 10;
+const posts = getPublishedPosts();
 
-let posts: BlogPost[] = [];
-let totalPages = 1;
-let error: string | null = null;
-
-try {
-  const res = await getPosts(currentPage, perPage);
-  posts = res.data;
-  totalPages = res.meta?.total_pages || 1;
-} catch (e) {
-  error = '暂时无法加载博客文章';
-}
-
-function formatDate(dateStr: string | null): string {
+function formatDate(dateStr: string | undefined): string {
   if (!dateStr) return '';
   return new Date(dateStr).toLocaleDateString('zh-CN', {
     year: 'numeric', month: 'long', day: 'numeric',
@@ -29,6 +20,7 @@ function typeLabel(type: string): string {
   const labels: Record<string, string> = {
     weekly: '📊 周报',
     monthly: '📈 月报',
+    spotlight: '🔦 深度分析',
   };
   return labels[type] || type;
 }
@@ -40,37 +32,30 @@ function typeLabel(type: string): string {
     <p class="mt-2 text-gray-600">AI 开源趋势周报、月报与深度分析</p>
   </div>
 
-  {error ? (
-    <div class="card text-center text-gray-500 py-12">
-      <p>{error}</p>
-    </div>
-  ) : posts.length === 0 ? (
+  {posts.length === 0 ? (
     <div class="card text-center text-gray-500 py-12">
       <p>暂无文章</p>
-      <p class="mt-2 text-sm">运行 <code class="bg-gray-100 px-2 py-1 rounded">tishi generate weekly</code> 生成首篇周报</p>
+      <p class="mt-2 text-sm">
+        运行 <code class="bg-gray-100 px-2 py-1 rounded">tishi generate</code> 生成首篇文章
+      </p>
     </div>
   ) : (
     <div class="space-y-4">
-      {posts.map((post) => (
+      {posts.map(post => (
         <a href={`/blog/${post.slug}`} class="card block group">
           <div class="flex items-start justify-between">
             <div>
-              <span class="text-xs text-gray-400">{typeLabel(post.type)}</span>
+              <span class="text-xs text-gray-400">{typeLabel(post.post_type)}</span>
               <h2 class="mt-1 text-lg font-semibold text-gray-900 group-hover:text-primary-600 transition-colors">
                 {post.title}
               </h2>
-              {post.excerpt && (
-                <p class="mt-2 text-sm text-gray-500 line-clamp-2">{post.excerpt}</p>
-              )}
             </div>
-            <time class="shrink-0 text-xs text-gray-400">
+            <time class="shrink-0 text-xs text-gray-400 ml-4">
               {formatDate(post.published_at)}
             </time>
           </div>
         </a>
       ))}
     </div>
-
-    <Pagination currentPage={currentPage} totalPages={totalPages} baseUrl="/blog" />
   )}
 </BaseLayout>

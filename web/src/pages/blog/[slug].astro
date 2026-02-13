@@ -1,40 +1,43 @@
 ---
+/**
+ * /blog/{slug} — 博客文章详情
+ *
+ * 数据源：data/posts/{slug}.json
+ * SSG: getStaticPaths() 枚举所有文章
+ * Markdown 内容使用 marked 渲染为 HTML
+ */
 import BaseLayout from '../../layouts/BaseLayout.astro';
-import { getPost, type BlogPost } from '../../lib/api';
+import { getAllPosts, getPost } from '../../lib/data';
+import { marked } from 'marked';
+
+export function getStaticPaths() {
+  const posts = getAllPosts();
+  return posts.map(p => ({
+    params: { slug: p.slug },
+  }));
+}
 
 const { slug } = Astro.params;
+const post = getPost(slug!);
 
-let post: BlogPost | null = null;
-let error: string | null = null;
-
-try {
-  if (slug) {
-    const res = await getPost(slug);
-    post = res.data;
-  }
-} catch (e) {
-  error = '文章未找到';
+if (!post) {
+  return Astro.redirect('/404');
 }
+
+const htmlContent = await marked(post.content);
 ---
 
-<BaseLayout title={post?.title || '文章'}>
-  {error || !post ? (
-    <div class="card text-center text-gray-500 py-12">
-      <p class="text-lg">{error || '文章不存在'}</p>
-      <a href="/blog" class="mt-4 inline-block text-primary-600 hover:underline">← 返回博客列表</a>
-    </div>
-  ) : (
-    <article class="prose prose-gray mx-auto max-w-3xl">
-      <a href="/blog" class="text-sm text-gray-500 hover:text-primary-600 no-underline">← 返回博客列表</a>
-      <h1 class="mt-4">{post.title}</h1>
-      {post.published_at && (
-        <time class="text-sm text-gray-400">
-          {new Date(post.published_at).toLocaleDateString('zh-CN', {
-            year: 'numeric', month: 'long', day: 'numeric',
-          })}
-        </time>
-      )}
-      <div class="mt-8 whitespace-pre-wrap" set:html={post.content} />
-    </article>
-  )}
+<BaseLayout title={post.title}>
+  <article class="prose prose-gray mx-auto max-w-3xl">
+    <a href="/blog" class="text-sm text-gray-500 hover:text-primary-600 no-underline">← 返回博客列表</a>
+    <h1 class="mt-4">{post.title}</h1>
+    {post.published_at && (
+      <time class="text-sm text-gray-400">
+        {new Date(post.published_at).toLocaleDateString('zh-CN', {
+          year: 'numeric', month: 'long', day: 'numeric',
+        })}
+      </time>
+    )}
+    <div class="mt-8" set:html={htmlContent} />
+  </article>
 </BaseLayout>

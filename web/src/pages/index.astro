@@ -1,52 +1,72 @@
 ---
+/**
+ * / — 首页：AI 开源项目排行榜
+ *
+ * 数据源：data/rankings/{date}.json + data/posts/ + data/categories.json
+ */
 import BaseLayout from '../layouts/BaseLayout.astro';
-import { getRankings, type Project } from '../lib/api';
+import { getLatestRanking, getPublishedPosts, getCategories } from '../lib/data';
 
-let projects: Project[] = [];
-let error: string | null = null;
-
-try {
-  const res = await getRankings(1, 100);
-  projects = res.data;
-} catch (e) {
-  error = '暂时无法加载排行榜数据，请确认后端服务已启动。';
-}
-
-function languageColor(lang: string | null): string {
-  const colors: Record<string, string> = {
-    Python: 'bg-blue-500',
-    TypeScript: 'bg-blue-600',
-    JavaScript: 'bg-yellow-400',
-    Go: 'bg-cyan-500',
-    Rust: 'bg-orange-600',
-    'C++': 'bg-pink-600',
-    Java: 'bg-red-500',
-    Jupyter: 'bg-orange-400',
-  };
-  return colors[lang || ''] || 'bg-gray-400';
-}
+const ranking = getLatestRanking();
+const posts = getPublishedPosts().slice(0, 5);
+const categories = getCategories().sort((a, b) => a.sort_order - b.sort_order);
 
 function formatNumber(n: number): string {
   if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
   return String(n);
 }
+
+function rankChangeText(change?: number): string {
+  if (change == null) return '🆕';
+  if (change > 0) return `↑${change}`;
+  if (change < 0) return `↓${Math.abs(change)}`;
+  return '—';
+}
+
+function rankChangeClass(change?: number): string {
+  if (change == null) return 'text-blue-600';
+  if (change > 0) return 'text-green-600';
+  if (change < 0) return 'text-red-600';
+  return 'text-gray-400';
+}
+
+const langColors: Record<string, string> = {
+  Python: 'bg-blue-500', TypeScript: 'bg-blue-600', JavaScript: 'bg-yellow-400',
+  Go: 'bg-cyan-500', Rust: 'bg-orange-600', 'C++': 'bg-pink-600',
+  Java: 'bg-red-500', Jupyter: 'bg-orange-400', Kotlin: 'bg-purple-500',
+  Swift: 'bg-orange-500', C: 'bg-gray-600', Ruby: 'bg-red-600',
+};
 ---
 
 <BaseLayout title="AI 开源排行榜">
+  <!-- Hero -->
   <div class="mb-8">
     <h1 class="text-3xl font-bold text-gray-900">🔥 AI 开源项目排行榜</h1>
-    <p class="mt-2 text-gray-600">GitHub AI 相关 Top 100 热门项目，数据每日自动更新</p>
+    <p class="mt-2 text-gray-600">
+      GitHub AI 相关 Top 100 热门项目，数据每日自动更新
+      {ranking && <span class="ml-2 text-sm text-gray-400">· 更新于 {ranking.date}</span>}
+    </p>
   </div>
 
-  {error ? (
-    <div class="card text-center text-gray-500 py-12">
-      <p class="text-lg">{error}</p>
-      <p class="mt-2 text-sm">运行 <code class="bg-gray-100 px-2 py-1 rounded">make run</code> 启动后端服务</p>
+  <!-- Category Navigation -->
+  {categories.length > 0 && (
+    <div class="mb-6 flex flex-wrap gap-2">
+      {categories.map(cat => (
+        <a href={`/categories/${cat.slug}`}
+           class="badge-blue hover:bg-blue-200 transition-colors cursor-pointer">
+          {cat.name}
+        </a>
+      ))}
     </div>
-  ) : projects.length === 0 ? (
+  )}
+
+  <!-- Ranking Table -->
+  {!ranking || ranking.items.length === 0 ? (
     <div class="card text-center text-gray-500 py-12">
-      <p class="text-lg">暂无数据</p>
-      <p class="mt-2 text-sm">运行 <code class="bg-gray-100 px-2 py-1 rounded">tishi collect</code> 开始首次数据采集</p>
+      <p class="text-lg">暂无排行数据</p>
+      <p class="mt-2 text-sm">
+        运行 <code class="bg-gray-100 px-2 py-1 rounded">tishi scrape && tishi score</code> 生成排行榜
+      </p>
     </div>
   ) : (
     <div class="overflow-x-auto">
@@ -55,54 +75,87 @@ function formatNumber(n: number): string {
           <tr>
             <th class="px-4 py-3 w-16">排名</th>
             <th class="px-4 py-3">项目</th>
+            <th class="px-4 py-3 w-20">分类</th>
             <th class="px-4 py-3 w-24">语言</th>
-            <th class="px-4 py-3 w-24 text-right">⭐ Star</th>
-            <th class="px-4 py-3 w-24 text-right">🍴 Fork</th>
+            <th class="px-4 py-3 w-24 text-right">⭐ 总Star</th>
+            <th class="px-4 py-3 w-20 text-right">日增</th>
             <th class="px-4 py-3 w-20 text-right">评分</th>
+            <th class="px-4 py-3 w-16 text-center">变化</th>
           </tr>
         </thead>
         <tbody class="divide-y divide-gray-200">
-          {projects.map((p) => (
+          {ranking.items.map(item => (
             <tr class="hover:bg-gray-50 transition-colors">
               <td class="px-4 py-3 font-bold text-gray-400">
-                {p.rank != null ? (
-                  <span class={p.rank <= 3 ? 'text-primary-600 text-lg' : ''}>
-                    #{p.rank}
-                  </span>
-                ) : '-'}
+                <span class={item.rank <= 3 ? 'text-primary-600 text-lg' : ''}>
+                  #{item.rank}
+                </span>
               </td>
               <td class="px-4 py-3">
-                <div>
-                  <a href={`/projects/${p.id}`}
-                     class="font-medium text-gray-900 hover:text-primary-600 transition-colors">
-                    {p.full_name}
-                  </a>
-                  {p.description && (
-                    <p class="mt-0.5 text-xs text-gray-500 line-clamp-1">{p.description}</p>
-                  )}
-                </div>
+                <a href={`/projects/${item.project_id}`}
+                   class="font-medium text-gray-900 hover:text-primary-600 transition-colors">
+                  {item.full_name}
+                </a>
+                {item.summary && (
+                  <p class="mt-0.5 text-xs text-gray-500 line-clamp-1">{item.summary}</p>
+                )}
               </td>
               <td class="px-4 py-3">
-                {p.language && (
+                {item.category && (
+                  <a href={`/categories/${item.category}`}
+                     class="badge-green text-xs">{item.category}</a>
+                )}
+              </td>
+              <td class="px-4 py-3">
+                {item.language && (
                   <span class="inline-flex items-center gap-1.5 text-xs">
-                    <span class={`h-2.5 w-2.5 rounded-full ${languageColor(p.language)}`}></span>
-                    {p.language}
+                    <span class={`h-2.5 w-2.5 rounded-full ${langColors[item.language] || 'bg-gray-400'}`}></span>
+                    {item.language}
                   </span>
                 )}
               </td>
               <td class="px-4 py-3 text-right font-mono text-xs">
-                {formatNumber(p.stars)}
+                {formatNumber(item.stars)}
               </td>
-              <td class="px-4 py-3 text-right font-mono text-xs text-gray-500">
-                {formatNumber(p.forks)}
+              <td class="px-4 py-3 text-right font-mono text-xs text-yellow-600">
+                {item.daily_stars != null ? `+${item.daily_stars}` : '-'}
               </td>
               <td class="px-4 py-3 text-right">
-                <span class="badge-blue">{p.score.toFixed(1)}</span>
+                <span class="badge-blue">{item.score.toFixed(1)}</span>
+              </td>
+              <td class={`px-4 py-3 text-center text-xs font-medium ${rankChangeClass(item.rank_change)}`}>
+                {rankChangeText(item.rank_change)}
               </td>
             </tr>
           ))}
         </tbody>
       </table>
     </div>
+  )}
+
+  <!-- Latest Blog Posts -->
+  {posts.length > 0 && (
+    <section class="mt-12">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-xl font-bold text-gray-900">📝 最新博客</h2>
+        <a href="/blog" class="text-sm text-primary-600 hover:underline">查看全部 →</a>
+      </div>
+      <div class="space-y-3">
+        {posts.map(post => (
+          <a href={`/blog/${post.slug}`} class="card block group">
+            <div class="flex items-center justify-between">
+              <h3 class="text-sm font-medium text-gray-900 group-hover:text-primary-600 transition-colors">
+                {post.title}
+              </h3>
+              {post.published_at && (
+                <time class="text-xs text-gray-400 shrink-0 ml-4">
+                  {new Date(post.published_at).toLocaleDateString('zh-CN')}
+                </time>
+              )}
+            </div>
+          </a>
+        ))}
+      </div>
+    </section>
   )}
 </BaseLayout>

@@ -28,8 +28,10 @@ docker-compose.override.yml
 # Build cache
 tmp/
 
-# sqlc generated (optional — track or not)
-# internal/db/dbgen/
+# Web frontend
+web/node_modules/
+web/dist/
+web/.astro/
 
-# Air live reload
-tmp/
+# Scripts (ephemeral)
+scripts/

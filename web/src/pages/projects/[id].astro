@@ -1,21 +1,29 @@
 ---
+/**
+ * /projects/{id} — 项目详情 + LLM 中文分析报告
+ *
+ * 数据源：data/projects/{id}.json + data/snapshots/*.jsonl
+ * SSG: getStaticPaths() 枚举所有项目
+ */
 import BaseLayout from '../../layouts/BaseLayout.astro';
 import TrendChart from '../../components/TrendChart.astro';
-import { getProject, type Project } from '../../lib/api';
+import { getAllProjects, getProject, getProjectSnapshots } from '../../lib/data';
+
+export function getStaticPaths() {
+  const projects = getAllProjects();
+  return projects.map(p => ({
+    params: { id: p.id },
+  }));
+}
 
 const { id } = Astro.params;
+const project = getProject(id!);
 
-let project: Project | null = null;
-let error: string | null = null;
-
-try {
-  if (id) {
-    const res = await getProject(Number(id));
-    project = res.data;
-  }
-} catch (e) {
-  error = '项目未找到';
+if (!project) {
+  return Astro.redirect('/404');
 }
+
+const snapshots = getProjectSnapshots(project.id, 90);
 
 function formatNumber(n: number): string {
   if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
@@ -23,71 +31,174 @@ function formatNumber(n: number): string {
 }
 ---
 
-<BaseLayout title={project?.full_name || '项目详情'}>
-  {error || !project ? (
-    <div class="card text-center text-gray-500 py-12">
-      <p class="text-lg">{error || '项目不存在'}</p>
-      <a href="/" class="mt-4 inline-block text-primary-600 hover:underline">← 返回排行榜</a>
+<BaseLayout title={project.full_name}>
+  <a href="/" class="text-sm text-gray-500 hover:text-primary-600">← 返回排行榜</a>
+
+  <!-- Project Header -->
+  <div class="mt-4 card">
+    <div class="flex items-start justify-between">
+      <div>
+        <h1 class="text-2xl font-bold text-gray-900">{project.full_name}</h1>
+        {project.description && (
+          <p class="mt-2 text-gray-600">{project.description}</p>
+        )}
+      </div>
+      {project.rank != null && (
+        <span class="badge-blue text-lg font-bold">#{project.rank}</span>
+      )}
     </div>
-  ) : (
-    <div>
-      <a href="/" class="text-sm text-gray-500 hover:text-primary-600">← 返回排行榜</a>
 
-      <div class="mt-4 card">
-        <div class="flex items-start justify-between">
-          <div>
-            <h1 class="text-2xl font-bold text-gray-900">{project.full_name}</h1>
-            {project.description && (
-              <p class="mt-2 text-gray-600">{project.description}</p>
-            )}
-          </div>
-          {project.rank != null && (
-            <span class="badge-blue text-lg font-bold">#{project.rank}</span>
-          )}
+    <!-- Stats -->
+    <div class="mt-6 flex flex-wrap gap-6">
+      <div class="text-center">
+        <div class="text-2xl font-bold text-yellow-500">⭐ {formatNumber(project.stars)}</div>
+        <div class="text-xs text-gray-400">Stars</div>
+      </div>
+      <div class="text-center">
+        <div class="text-2xl font-bold text-gray-600">🍴 {formatNumber(project.forks)}</div>
+        <div class="text-xs text-gray-400">Forks</div>
+      </div>
+      <div class="text-center">
+        <div class="text-2xl font-bold text-green-600">📊 {project.score.toFixed(1)}</div>
+        <div class="text-xs text-gray-400">评分</div>
+      </div>
+      {project.language && (
+        <div class="text-center">
+          <div class="text-2xl font-bold text-blue-600">💻 {project.language}</div>
+          <div class="text-xs text-gray-400">语言</div>
         </div>
-
-        <div class="mt-6 flex flex-wrap gap-4">
-          <div class="text-center">
-            <div class="text-2xl font-bold text-yellow-500">⭐ {formatNumber(project.stars)}</div>
-            <div class="text-xs text-gray-400">Stars</div>
-          </div>
-          <div class="text-center">
-            <div class="text-2xl font-bold text-gray-600">🍴 {formatNumber(project.forks)}</div>
-            <div class="text-xs text-gray-400">Forks</div>
-          </div>
-          <div class="text-center">
-            <div class="text-2xl font-bold text-green-600">📊 {project.score.toFixed(1)}</div>
-            <div class="text-xs text-gray-400">评分</div>
-          </div>
-          {project.language && (
-            <div class="text-center">
-              <div class="text-2xl font-bold text-blue-600">💻 {project.language}</div>
-              <div class="text-xs text-gray-400">语言</div>
-            </div>
-          )}
+      )}
+      {project.trending?.daily_stars != null && (
+        <div class="text-center">
+          <div class="text-2xl font-bold text-orange-500">🔥 +{project.trending.daily_stars}</div>
+          <div class="text-xs text-gray-400">今日 Star</div>
         </div>
+      )}
+    </div>
 
-        {project.topics && project.topics.length > 0 && (
-          <div class="mt-6 flex flex-wrap gap-2">
-            {project.topics.map((topic: string) => (
-              <span class="badge-green">{topic}</span>
+    <!-- Topics -->
+    {project.topics && project.topics.length > 0 && (
+      <div class="mt-6 flex flex-wrap gap-2">
+        {project.topics.map(topic => (
+          <span class="badge-green">{topic}</span>
+        ))}
+      </div>
+    )}
+
+    <!-- Categories -->
+    {project.categories && project.categories.length > 0 && (
+      <div class="mt-4 flex flex-wrap gap-2">
+        {project.categories.map(cat => (
+          <a href={`/categories/${cat.slug}`}
+             class="badge-blue hover:bg-blue-200 transition-colors">
+            {cat.slug}
+          </a>
+        ))}
+      </div>
+    )}
+
+    <!-- Actions -->
+    <div class="mt-6 flex gap-3">
+      <a href={`https://github.com/${project.full_name}`}
+         target="_blank" rel="noopener"
+         class="inline-flex items-center gap-2 rounded-lg bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-700 transition-colors">
+        GitHub →
+      </a>
+      {project.homepage && (
+        <a href={project.homepage}
+           target="_blank" rel="noopener"
+           class="inline-flex items-center gap-2 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
+          官网 →
+        </a>
+      )}
+    </div>
+  </div>
+
+  <!-- LLM Analysis -->
+  {project.analysis && project.analysis.status === 'published' && (
+    <div class="mt-6 card">
+      <h2 class="text-xl font-bold text-gray-900 mb-4">📋 项目分析（AI 生成）</h2>
+
+      {project.analysis.summary && (
+        <p class="text-lg text-primary-700 font-medium mb-4">{project.analysis.summary}</p>
+      )}
+
+      {project.analysis.positioning && (
+        <div class="mb-4">
+          <h3 class="text-sm font-semibold text-gray-500 uppercase mb-1">定位</h3>
+          <p class="text-gray-700">{project.analysis.positioning}</p>
+        </div>
+      )}
+
+      {project.analysis.features && project.analysis.features.length > 0 && (
+        <div class="mb-4">
+          <h3 class="text-sm font-semibold text-gray-500 uppercase mb-2">核心功能</h3>
+          <ul class="space-y-1">
+            {project.analysis.features.map(f => (
+              <li class="text-gray-700">
+                <span class="font-medium">{f.name}</span>
+                {f.desc && <span class="text-gray-500"> — {f.desc}</span>}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {project.analysis.advantages && (
+        <div class="mb-4">
+          <h3 class="text-sm font-semibold text-gray-500 uppercase mb-1">技术优势</h3>
+          <p class="text-gray-700">{project.analysis.advantages}</p>
+        </div>
+      )}
+
+      {project.analysis.tech_stack && (
+        <div class="mb-4">
+          <h3 class="text-sm font-semibold text-gray-500 uppercase mb-1">技术栈</h3>
+          <p class="text-gray-700">{project.analysis.tech_stack}</p>
+        </div>
+      )}
+
+      {project.analysis.use_cases && (
+        <div class="mb-4">
+          <h3 class="text-sm font-semibold text-gray-500 uppercase mb-1">适用场景</h3>
+          <p class="text-gray-700">{project.analysis.use_cases}</p>
+        </div>
+      )}
+
+      {project.analysis.comparison && project.analysis.comparison.length > 0 && (
+        <div class="mb-4">
+          <h3 class="text-sm font-semibold text-gray-500 uppercase mb-2">同类对比</h3>
+          <div class="space-y-2">
+            {project.analysis.comparison.map(c => (
+              <div class="flex gap-2 text-gray-700">
+                <span class="font-medium shrink-0">vs {c.project}</span>
+                <span class="text-gray-500">— {c.diff}</span>
+              </div>
             ))}
           </div>
-        )}
-
-        <div class="mt-6 flex gap-3">
-          <a href={project.github_url || `https://github.com/${project.full_name}`}
-             target="_blank" rel="noopener"
-             class="inline-flex items-center gap-2 rounded-lg bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-700 transition-colors">
-            GitHub →
-          </a>
         </div>
-      </div>
+      )}
 
-      <!-- Trend Chart -->
-      <div class="mt-6 card">
-        <TrendChart projectId={project.id} projectName={project.full_name} />
+      {project.analysis.ecosystem && (
+        <div class="mb-4">
+          <h3 class="text-sm font-semibold text-gray-500 uppercase mb-1">生态</h3>
+          <p class="text-gray-700">{project.analysis.ecosystem}</p>
+        </div>
+      )}
+
+      <div class="mt-4 pt-4 border-t border-gray-100 text-xs text-gray-400">
+        模型: {project.analysis.model} · 生成于 {new Date(project.analysis.generated_at).toLocaleDateString('zh-CN')}
+        {project.analysis.reviewed_at && (
+          <span> · 审核于 {new Date(project.analysis.reviewed_at).toLocaleDateString('zh-CN')}</span>
+        )}
       </div>
+    </div>
+  )}
+
+  <!-- Trend Chart -->
+  {snapshots.length > 0 && (
+    <div class="mt-6 card">
+      <TrendChart projectName={project.full_name} snapshots={snapshots} />
     </div>
   )}
 </BaseLayout>
