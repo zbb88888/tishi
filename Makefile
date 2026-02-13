@@ -1,6 +1,7 @@
 # tishi - AI Trends Top 100 Tracker
 
-.PHONY: build test lint clean tidy scrape score analyze review push pipeline docker-build help
+.PHONY: build test lint clean tidy scrape score analyze review push pipeline \
+       web-install web-build web-dev docker-build help
 
 # Build vars
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
@@ -61,6 +62,20 @@ lint:
 ## tidy: Tidy Go modules
 tidy:
 	go mod tidy
+
+## ──────────────── Stage 2: Frontend ────────────────
+
+## web-install: Install frontend dependencies
+web-install:
+	cd web && npm install
+
+## web-build: Build Astro SSG static site
+web-build:
+	cd web && npm run build
+
+## web-dev: Start Astro dev server
+web-dev:
+	cd web && npm run dev
 
 ## docker-build: Build Docker image
 docker-build:

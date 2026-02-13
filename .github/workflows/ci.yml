@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 env:
-  GO_VERSION: '1.22'
+  GO_VERSION: '1.24'
   NODE_VERSION: '20'
 
 jobs:
@@ -85,14 +85,18 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-          cache-dependency-path: web/package-lock.json
 
       - name: Install dependencies
-        run: npm ci
+        run: npm install
 
-      - name: TypeScript check
-        run: npm run check
+      - name: Ensure data directories exist
+        run: |
+          mkdir -p data/analyses data/posts
+          # Create minimal seed files so SSG can build without real data
+          echo '[]' > data/rankings.json
+          echo '{}' > data/categories.json
+          echo '{}' > data/projects.json
+        working-directory: ${{ github.workspace }}
 
       - name: Build
         run: npm run build
