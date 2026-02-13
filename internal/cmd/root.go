@@ -34,11 +34,17 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "配置文件路径 (默认: ./config.yaml)")
 	rootCmd.PersistentFlags().String("log-level", "info", "日志级别 (debug/info/warn/error)")
 
-	// 添加子命令
-	rootCmd.AddCommand(serverCmd)
-	rootCmd.AddCommand(collectCmd)
+	// v1.0 子命令
+	rootCmd.AddCommand(scrapeCmd)
+	rootCmd.AddCommand(scoreCmd)
 	rootCmd.AddCommand(analyzeCmd)
 	rootCmd.AddCommand(generateCmd)
+	rootCmd.AddCommand(reviewCmd)
+	rootCmd.AddCommand(pushCmd)
+
+	// v0.x legacy 子命令（Phase 4 清理）
+	rootCmd.AddCommand(serverCmd)
+	rootCmd.AddCommand(collectCmd)
 	rootCmd.AddCommand(migrateCmd)
 	rootCmd.AddCommand(versionCmd)
 }

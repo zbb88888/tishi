@@ -1,47 +1,50 @@
 package cmd
 
 import (
-	"fmt"
-
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
 
 	"github.com/zbb88888/tishi/internal/config"
-	"github.com/zbb88888/tishi/internal/content"
-	"github.com/zbb88888/tishi/internal/db"
+	"github.com/zbb88888/tishi/internal/datastore"
+	"github.com/zbb88888/tishi/internal/generator"
 )
 
 var generateCmd = &cobra.Command{
-	Use:   "generate [weekly|monthly]",
-	Short: "手动生成博客内容",
-	Long:  "手动触发生成周报或月报博客文章。",
+	Use:   "generate [weekly|spotlight]",
+	Short: "从 data/ 数据生成博客文章",
+	Long:  "基于排行榜和项目分析数据，自动生成周报或项目深度解读文章。",
 	Args:  cobra.ExactArgs(1),
 	RunE:  runGenerate,
 }
 
+var (
+	generateID  string
+	generateDry bool
+)
+
+func init() {
+	generateCmd.Flags().StringVar(&generateID, "id", "", "项目 ID（spotlight 类型必填）")
+	generateCmd.Flags().BoolVar(&generateDry, "dry-run", false, "仅打印内容，不写文件")
+}
+
 func runGenerate(cmd *cobra.Command, args []string) error {
 	postType := args[0]
-	if postType != "weekly" && postType != "monthly" {
-		return fmt.Errorf("不支持的文章类型 %q，可选: weekly, monthly", postType)
-	}
-
 	cfg := config.Get()
 	log := logger.Named("generate")
 
-	pool, err := db.Connect(cmd.Context(), cfg.Database)
-	if err != nil {
-		return fmt.Errorf("连接数据库失败: %w", err)
+	store := datastore.NewStore(cfg.DataDir, log)
+
+	g := generator.New(store, log)
+
+	opts := generator.RunOptions{
+		ProjectID: generateID,
+		DryRun:    generateDry,
 	}
-	defer pool.Close()
 
-	g := content.NewGenerator(pool, log, cfg)
-
-	log.Info("开始生成内容", zap.String("type", postType))
-	if err := g.Run(cmd.Context(), postType); err != nil {
-		log.Error("内容生成失败", zap.Error(err), zap.String("type", postType))
+	if err := g.Run(postType, opts); err != nil {
+		log.Error("内容生成失败", zap.Error(err))
 		return err
 	}
 
-	log.Info("内容生成完成", zap.String("type", postType))
 	return nil
 }
