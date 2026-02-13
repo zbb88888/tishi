@@ -42,10 +42,7 @@ func init() {
 	rootCmd.AddCommand(reviewCmd)
 	rootCmd.AddCommand(pushCmd)
 
-	// v0.x legacy 子命令（Phase 4 清理）
-	rootCmd.AddCommand(serverCmd)
-	rootCmd.AddCommand(collectCmd)
-	rootCmd.AddCommand(migrateCmd)
+	// 信息子命令
 	rootCmd.AddCommand(versionCmd)
 }
 

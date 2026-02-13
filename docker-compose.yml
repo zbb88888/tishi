@@ -1,53 +1,21 @@
+# tishi v1.0 — Pipeline runner (no persistent services)
+# Usage: docker compose run --rm tishi scrape
+#        docker compose run --rm tishi pipeline (scrape → score → analyze → push)
+
 services:
-  app:
+  tishi:
     build:
       context: .
       args:
         VERSION: ${VERSION:-dev}
-    ports:
-      - "8080:8080"
-    depends_on:
-      postgres:
-        condition: service_healthy
-    environment:
-      DB_HOST: postgres
-      DB_PORT: 5432
-      DB_USER: tishi
-      DB_PASSWORD: tishi_secret
-      DB_NAME: tishi
-      DB_SSLMODE: disable
-      SERVER_HOST: 0.0.0.0
-      SERVER_PORT: 8080
-      GITHUB_TOKENS: ${GITHUB_TOKENS}
-      LOG_LEVEL: info
-    restart: unless-stopped
-
-  postgres:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_USER: tishi
-      POSTGRES_PASSWORD: tishi_secret
-      POSTGRES_DB: tishi
-    ports:
-      - "5432:5432"
     volumes:
-      - pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U tishi"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-    restart: unless-stopped
-
-  nginx:
-    image: nginx:1.25-alpine
-    ports:
-      - "80:80"
-    depends_on:
-      - app
-    volumes:
-      - ./deploy/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-    restart: unless-stopped
-
-volumes:
-  pgdata:
+      - ./data:/data
+      - ./config.yaml:/config.yaml:ro
+    environment:
+      TISHI_DATA_DIR: /data
+      TISHI_GITHUB_TOKENS: ${GITHUB_TOKENS:-}
+      TISHI_LLM_API_KEY: ${TISHI_LLM_API_KEY:-}
+      TISHI_LLM_PROVIDER: ${TISHI_LLM_PROVIDER:-deepseek}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    entrypoint: [ "/tishi" ]
+    command: [ "--help" ]

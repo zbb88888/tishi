@@ -13,7 +13,6 @@ import (
 
 // Config holds all application configuration.
 type Config struct {
-	// v1.0 fields
 	DataDir string        `mapstructure:"data_dir"` // path to data/ directory
 	GitHub  GitHubConfig  `mapstructure:"github"`
 	Scraper ScraperConfig `mapstructure:"scraper"`
@@ -21,19 +20,11 @@ type Config struct {
 	LLM     LLMConfig     `mapstructure:"llm"`
 	Logging LoggingConfig `mapstructure:"logging"`
 	Site    SiteConfig    `mapstructure:"site"`
-
-	// v0.x legacy fields (kept for backward compatibility, will be removed in Phase 4)
-	Database  DatabaseConfig  `mapstructure:"database"`
-	Server    ServerConfig    `mapstructure:"server"`
-	Collector CollectorConfig `mapstructure:"collector"`
-	Analyzer  AnalyzerConfig  `mapstructure:"analyzer"`
-	Scheduler SchedulerConfig `mapstructure:"scheduler"`
 }
 
 // GitHubConfig holds GitHub API settings.
 type GitHubConfig struct {
-	Tokens        []string `mapstructure:"tokens"`
-	SearchQueries []string `mapstructure:"search_queries"` // legacy
+	Tokens []string `mapstructure:"tokens"`
 }
 
 // ScraperConfig holds Trending scraper settings.
@@ -76,61 +67,6 @@ type SiteConfig struct {
 	Description string `mapstructure:"description"`
 }
 
-// --- Legacy v0.x configs (kept for backward compatibility) ---
-
-// DatabaseConfig holds PostgreSQL connection settings.
-type DatabaseConfig struct {
-	Host            string        `mapstructure:"host"`
-	Port            int           `mapstructure:"port"`
-	Name            string        `mapstructure:"name"`
-	User            string        `mapstructure:"user"`
-	Password        string        `mapstructure:"password"`
-	SSLMode         string        `mapstructure:"sslmode"`
-	MaxOpenConns    int           `mapstructure:"max_open_conns"`
-	MaxIdleConns    int           `mapstructure:"max_idle_conns"`
-	ConnMaxLifetime time.Duration `mapstructure:"conn_max_lifetime"`
-}
-
-// ServerConfig holds HTTP server settings.
-type ServerConfig struct {
-	Host         string        `mapstructure:"host"`
-	Port         int           `mapstructure:"port"`
-	ReadTimeout  time.Duration `mapstructure:"read_timeout"`
-	WriteTimeout time.Duration `mapstructure:"write_timeout"`
-	IdleTimeout  time.Duration `mapstructure:"idle_timeout"`
-}
-
-// CollectorConfig holds legacy data collection settings.
-type CollectorConfig struct {
-	TopN     int           `mapstructure:"top_n"`
-	MinStars int           `mapstructure:"min_stars"`
-	Timeout  time.Duration `mapstructure:"timeout"`
-	RetryMax int           `mapstructure:"retry_max"`
-}
-
-// AnalyzerConfig holds legacy trend analysis settings.
-type AnalyzerConfig struct {
-	Weights WeightsConfig `mapstructure:"weights"`
-}
-
-// WeightsConfig holds legacy scoring weight parameters.
-type WeightsConfig struct {
-	DailyStar     float64 `mapstructure:"daily_star"`
-	WeeklyStar    float64 `mapstructure:"weekly_star"`
-	ForkRatio     float64 `mapstructure:"fork_ratio"`
-	IssueActivity float64 `mapstructure:"issue_activity"`
-	Recency       float64 `mapstructure:"recency"`
-}
-
-// SchedulerConfig holds legacy cron schedule expressions.
-type SchedulerConfig struct {
-	CollectCron string `mapstructure:"collect_cron"`
-	AnalyzeCron string `mapstructure:"analyze_cron"`
-	BuildCron   string `mapstructure:"build_cron"`
-	WeeklyCron  string `mapstructure:"weekly_cron"`
-	MonthlyCron string `mapstructure:"monthly_cron"`
-}
-
 // global holds the singleton config instance.
 var global *Config
 
@@ -162,16 +98,6 @@ func Load(cfgFile string) (*Config, error) {
 	_ = viper.BindEnv("llm.provider", "TISHI_LLM_PROVIDER")
 	_ = viper.BindEnv("llm.api_key", "TISHI_LLM_API_KEY")
 	_ = viper.BindEnv("llm.model", "TISHI_LLM_MODEL")
-
-	// Legacy bindings (backward compat)
-	_ = viper.BindEnv("database.host", "DB_HOST")
-	_ = viper.BindEnv("database.port", "DB_PORT")
-	_ = viper.BindEnv("database.name", "DB_NAME")
-	_ = viper.BindEnv("database.user", "DB_USER")
-	_ = viper.BindEnv("database.password", "DB_PASSWORD")
-	_ = viper.BindEnv("database.sslmode", "DB_SSLMODE")
-	_ = viper.BindEnv("server.host", "SERVER_HOST")
-	_ = viper.BindEnv("server.port", "SERVER_PORT")
 
 	// Read config file (optional)
 	if err := viper.ReadInConfig(); err != nil {
@@ -239,51 +165,4 @@ func setDefaults() {
 	viper.SetDefault("site.title", "tishi — AI 开源项目深度分析")
 	viper.SetDefault("site.description", "追踪 GitHub AI 热门开源项目趋势，提供中文深度分析报告")
 
-	// --- Legacy v0.x defaults ---
-	viper.SetDefault("database.host", "localhost")
-	viper.SetDefault("database.port", 5432)
-	viper.SetDefault("database.name", "tishi_db")
-	viper.SetDefault("database.user", "tishi")
-	viper.SetDefault("database.password", "")
-	viper.SetDefault("database.sslmode", "disable")
-	viper.SetDefault("database.max_open_conns", 10)
-	viper.SetDefault("database.max_idle_conns", 5)
-	viper.SetDefault("database.conn_max_lifetime", "1h")
-
-	viper.SetDefault("server.host", "0.0.0.0")
-	viper.SetDefault("server.port", 8080)
-	viper.SetDefault("server.read_timeout", "10s")
-	viper.SetDefault("server.write_timeout", "30s")
-	viper.SetDefault("server.idle_timeout", "60s")
-
-	viper.SetDefault("collector.top_n", 100)
-	viper.SetDefault("collector.min_stars", 100)
-	viper.SetDefault("collector.timeout", "30m")
-	viper.SetDefault("collector.retry_max", 3)
-
-	viper.SetDefault("analyzer.weights.daily_star", 0.30)
-	viper.SetDefault("analyzer.weights.weekly_star", 0.25)
-	viper.SetDefault("analyzer.weights.fork_ratio", 0.15)
-	viper.SetDefault("analyzer.weights.issue_activity", 0.15)
-	viper.SetDefault("analyzer.weights.recency", 0.15)
-
-	viper.SetDefault("scheduler.collect_cron", "0 0 * * *")
-	viper.SetDefault("scheduler.analyze_cron", "0 1 * * *")
-	viper.SetDefault("scheduler.build_cron", "0 2 * * *")
-	viper.SetDefault("scheduler.weekly_cron", "0 6 * * 0")
-	viper.SetDefault("scheduler.monthly_cron", "0 6 1 * *")
-
-	viper.SetDefault("github.search_queries", []string{
-		"topic:llm stars:>100",
-		"topic:large-language-model stars:>100",
-		"topic:ai-agent stars:>100",
-		"topic:machine-learning stars:>500",
-		"topic:deep-learning stars:>500",
-		"topic:stable-diffusion stars:>100",
-		"topic:rag stars:>100",
-		"topic:transformers stars:>200",
-		"topic:vector-database stars:>100",
-		"topic:text-to-speech stars:>100",
-		"topic:generative-ai stars:>100",
-	})
 }

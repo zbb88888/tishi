@@ -1,13 +1,11 @@
 package config
 
 import (
-	"os"
 	"testing"
 )
 
 func TestLoad_Defaults(t *testing.T) {
-	// Clear any env vars that could interfere
-	for _, k := range []string{"TISHI_DB_HOST", "DB_HOST", "GITHUB_TOKENS"} {
+	for _, k := range []string{"GITHUB_TOKENS", "TISHI_LLM_API_KEY"} {
 		t.Setenv(k, "")
 	}
 
@@ -16,80 +14,37 @@ func TestLoad_Defaults(t *testing.T) {
 		t.Fatalf("Load() error: %v", err)
 	}
 
-	if cfg.Database.Host != "localhost" {
-		t.Errorf("expected default DB host=localhost, got %q", cfg.Database.Host)
-	}
-	if cfg.Database.Port != 5432 {
-		t.Errorf("expected default DB port=5432, got %d", cfg.Database.Port)
-	}
-	if cfg.Server.Port != 8080 {
-		t.Errorf("expected default server port=8080, got %d", cfg.Server.Port)
-	}
 	if cfg.Logging.Level != "info" {
 		t.Errorf("expected default log level=info, got %q", cfg.Logging.Level)
 	}
-	if len(cfg.GitHub.SearchQueries) == 0 {
-		t.Error("expected non-empty default search queries")
+	if cfg.DataDir != "./data" {
+		t.Errorf("expected default data_dir=./data, got %q", cfg.DataDir)
+	}
+	if cfg.Scorer.TopN != 100 {
+		t.Errorf("expected default scorer.top_n=100, got %d", cfg.Scorer.TopN)
+	}
+	if cfg.LLM.Provider != "deepseek" {
+		t.Errorf("expected default llm.provider=deepseek, got %q", cfg.LLM.Provider)
 	}
 }
 
 func TestLoad_EnvOverrides(t *testing.T) {
-	t.Setenv("DB_HOST", "pg-prod.internal")
-	t.Setenv("DB_PORT", "5433")
-	t.Setenv("SERVER_PORT", "9090")
 	t.Setenv("LOG_LEVEL", "debug")
 	t.Setenv("GITHUB_TOKENS", "tok1,tok2")
+	t.Setenv("TISHI_LLM_API_KEY", "test-key-123")
 
 	cfg, err := Load("")
 	if err != nil {
 		t.Fatalf("Load() error: %v", err)
 	}
 
-	if cfg.Database.Host != "pg-prod.internal" {
-		t.Errorf("expected DB host from env, got %q", cfg.Database.Host)
-	}
-	if cfg.Server.Port != 9090 {
-		t.Errorf("expected server port=9090 from env, got %d", cfg.Server.Port)
-	}
 	if cfg.Logging.Level != "debug" {
 		t.Errorf("expected log level=debug from env, got %q", cfg.Logging.Level)
 	}
-}
-
-func TestLoad_WithConfigFile(t *testing.T) {
-	// Create a temporary config file
-	content := `
-database:
-  host: config-host
-  port: 15432
-  name: testdb
-server:
-  port: 3000
-`
-	tmpFile, err := os.CreateTemp(t.TempDir(), "config-*.yaml")
-	if err != nil {
-		t.Fatalf("creating temp config: %v", err)
+	if len(cfg.GitHub.Tokens) != 2 {
+		t.Errorf("expected 2 tokens, got %d", len(cfg.GitHub.Tokens))
 	}
-	if _, err := tmpFile.WriteString(content); err != nil {
-		t.Fatalf("writing temp config: %v", err)
-	}
-	tmpFile.Close()
-
-	// Viper is global so this test shows config file loading works
-	// In production, the config path is set via CLI flag
-	_ = tmpFile.Name() // just verify the file was created
-}
-
-func TestBuildDSN(t *testing.T) {
-	cfg := DatabaseConfig{
-		Host: "db.example.com",
-		Port: 5432,
-	}
-
-	if cfg.Host != "db.example.com" {
-		t.Errorf("host = %q, want %q", cfg.Host, "db.example.com")
-	}
-	if cfg.Port != 5432 {
-		t.Errorf("port = %d, want 5432", cfg.Port)
+	if cfg.LLM.APIKey != "test-key-123" {
+		t.Errorf("expected LLM API key from env, got %q", cfg.LLM.APIKey)
 	}
 }
